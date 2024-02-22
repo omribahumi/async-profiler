@@ -3,7 +3,7 @@ PROFILER_VERSION=3.0
 PACKAGE_NAME=async-profiler-$(PROFILER_VERSION)-$(OS_TAG)-$(ARCH_TAG)
 PACKAGE_DIR=/tmp/$(PACKAGE_NAME)
 
-LAUNCHER=bin/asprof
+ASPROF=bin/asprof
 LIB_PROFILER=lib/libasyncProfiler.$(SOEXT)
 API_JAR=lib/async-profiler.jar
 CONVERTER_JAR=lib/converter.jar
@@ -90,7 +90,7 @@ endif
 
 .PHONY: all release test native clean
 
-all: build/bin build/lib build/$(LIB_PROFILER) build/$(LAUNCHER) build/$(API_JAR) build/$(CONVERTER_JAR)
+all: build/bin build/lib build/$(LIB_PROFILER) build/$(ASPROF) build/$(API_JAR) build/$(CONVERTER_JAR)
 
 release: JAVA_TARGET=7
 
@@ -101,12 +101,12 @@ $(PACKAGE_NAME).tar.gz: $(PACKAGE_DIR)
 	rm -r $(PACKAGE_DIR)
 
 $(PACKAGE_NAME).zip: $(PACKAGE_DIR)
-	codesign -s "Developer ID" -o runtime --timestamp -v $(PACKAGE_DIR)/$(LAUNCHER) $(PACKAGE_DIR)/$(LIB_PROFILER)
+	codesign -s "Developer ID" -o runtime --timestamp -v $(PACKAGE_DIR)/$(ASPROF) $(PACKAGE_DIR)/$(LIB_PROFILER)
 	ditto -c -k --keepParent $(PACKAGE_DIR) $@
 	rm -r $(PACKAGE_DIR)
 
 $(PACKAGE_DIR): build/bin build/lib \
-                build/$(LIB_PROFILER) build/$(LAUNCHER) \
+                build/$(LIB_PROFILER) build/$(ASPROF) \
                 build/$(API_JAR) build/$(CONVERTER_JAR) \
                 LICENSE *.md
 	mkdir -p $(PACKAGE_DIR)
@@ -117,8 +117,8 @@ $(PACKAGE_DIR): build/bin build/lib \
 build/%:
 	mkdir -p $@
 
-build/$(LAUNCHER): src/launcher/* src/jattach/* src/fdtransfer.h
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DPROFILER_VERSION=\"$(PROFILER_VERSION)\" -o $@ src/launcher/*.cpp src/jattach/*.c
+build/$(ASPROF): src/main/* src/jattach/* src/fdtransfer.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DPROFILER_VERSION=\"$(PROFILER_VERSION)\" -o $@ src/main/*.cpp src/jattach/*.c
 	strip $@
 
 build/$(LIB_PROFILER): $(SOURCES) $(HEADERS) $(RESOURCES) $(JAVA_HELPER_CLASSES)
