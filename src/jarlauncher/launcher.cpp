@@ -4,12 +4,14 @@
  */
 
 #include <jni.h>
+#include <dirent.h>
 #include <dlfcn.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include "../incbin.h"
 
 
@@ -36,12 +38,22 @@ INCBIN(CONVERTER_JAR, "build/lib/converter.jar")
 #define ARCH "loongarch64"
 #endif
 
+#if defined(__APPLE__)
+#define COMMON_JVM_DIR "/Library/Java/JavaVirtualMachines/"
+#define CONTENTS_HOME  "/Contents/Home"
+#define LIBJVM         "libjvm.dylib"
+#else
+#define COMMON_JVM_DIR "/usr/lib/jvm/"
+#define CONTENTS_HOME  ""
+#define LIBJVM         "libjvm.so"
+#endif
+
 
 typedef jint (*JNI_CreateJavaVM_t)(JavaVM **p_vm, void **p_env, void *vm_args);
 
 static void* load_libjvm(const char* java_home, const char* subdir) {
     char buf[PATH_MAX];
-    if (snprintf(buf, sizeof(buf), "%s/%s/libjvm.so", java_home, subdir) >= sizeof(buf)) {
+    if (snprintf(buf, sizeof(buf), "%s/%s/" LIBJVM, java_home, subdir) >= sizeof(buf)) {
         return NULL;
     }
 
@@ -53,9 +65,9 @@ static void* load_libjvm(const char* java_home, const char* subdir) {
     return dlopen(buf, RTLD_NOW);
 }
 
-static void* find_libjvm_at(const char* path, const char* java_exe) {
+static void* find_libjvm_at(const char* path, const char* path1 = "", const char* path2 = "") {
     char buf[PATH_MAX];
-    if (snprintf(buf, sizeof(buf), "%s%s", path, java_exe) >= sizeof(buf)) {
+    if (snprintf(buf, sizeof(buf), "%s%s%s", path, path1, path2) >= sizeof(buf)) {
         return NULL;
     }
 
@@ -105,11 +117,24 @@ static void* find_libjvm() {
         free(path_copy);
     }
 
-    if ((libjvm = find_libjvm_at("/etc/alternatives", "/java")) != NULL) {
+    if ((libjvm = find_libjvm_at("/etc/alternatives/java")) != NULL) {
         return libjvm;
     }
 
-    // TODO: check standard paths like /usr/lib/jvm/java-VER
+    DIR* dir = opendir(COMMON_JVM_DIR);
+    if (dir != NULL) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_name[0] != '.' && entry->d_type == DT_DIR) {
+                if ((libjvm = find_libjvm_at(COMMON_JVM_DIR, entry->d_name, CONTENTS_HOME "/bin/java")) != NULL) {
+                    closedir(dir);
+                    return libjvm;
+                }
+            }
+        }
+        closedir(dir);
+    }
+
     return NULL;
 }
 
@@ -176,8 +201,10 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
     }
 
     jobjectArray main_args = env->NewObjectArray(argc, env->FindClass("java/lang/String"), NULL);
-    for (int i = 0; i < argc; i++) {
-        env->SetObjectArrayElement(main_args, i, env->NewStringUTF(argv[i]));
+    if (main_args != NULL) {
+        for (int i = 0; i < argc; i++) {
+            env->SetObjectArrayElement(main_args, i, env->NewStringUTF(argv[i]));
+        }
     }
     if (env->ExceptionCheck()) {
         return print_exception(env);
