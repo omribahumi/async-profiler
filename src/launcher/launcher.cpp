@@ -15,6 +15,11 @@
 #include "../incbin.h"
 
 
+#define APP_BINARY "jfrconv"
+
+static const char VERSION_STRING[] =
+    "JFR converter " PROFILER_VERSION " built on " __DATE__ "\n";
+
 INCBIN(EMBEDDED_CLASS_LOADER, "src/helper/one/profiler/EmbeddedClassLoader.class")
 INCBIN(CONVERTER_JAR, "build/jar/jfrconv.jar")
 
@@ -151,6 +156,8 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
 
     JavaVMOption options[argc];
     int o_count = 0;
+    options[o_count++].optionString = (char*)"-Dsun.java.command=" APP_BINARY;
+
     for (; argc > 0; argc--, argv++) {
         if (strncmp(*argv, "-D", 2) == 0 || strncmp(*argv, "-X", 2) == 0) {
             options[o_count++].optionString = *argv;
@@ -219,9 +226,14 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+    if (argc > 1 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
+        printf(VERSION_STRING);
+        return 0;
+    }
+
     void* libjvm = find_libjvm();
     if (libjvm == NULL) {
-        fprintf(stderr, "No JDK found\n");
+        fprintf(stderr, "No JDK found. Set JAVA_HOME or ensure java executable is on the PATH.\n");
         return 1;
     }
 
