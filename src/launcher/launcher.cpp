@@ -16,7 +16,7 @@
 
 
 INCBIN(EMBEDDED_CLASS_LOADER, "src/helper/one/profiler/EmbeddedClassLoader.class")
-INCBIN(CONVERTER_JAR, "build/lib/converter.jar")
+INCBIN(CONVERTER_JAR, "build/jar/jfrconv.jar")
 
 
 #if defined(__APPLE__)
