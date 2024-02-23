@@ -143,8 +143,9 @@ static void* find_libjvm() {
     return NULL;
 }
 
-static int print_exception(JNIEnv* env) {
+static int print_exception(JavaVM* vm, JNIEnv* env) {
     env->ExceptionDescribe();
+    vm->DestroyJavaVM();
     return 1;
 }
 
@@ -185,27 +186,27 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
 
     jclass loader = env->DefineClass(EMBEDDED_CLASS_LOADER, NULL, (const jbyte*)CLASS_BYTES, INCBIN_SIZEOF(CLASS_BYTES));
     if (loader == NULL) {
-        return print_exception(env);
+        return print_exception(vm, env);
     }
 
     jmethodID load_main = env->GetStaticMethodID(loader, "loadMainClass", "(Ljava/nio/ByteBuffer;)Ljava/lang/Class;");
     if (load_main == NULL) {
-        return print_exception(env);
+        return print_exception(vm, env);
     }
 
     jobject jar = env->NewDirectByteBuffer((void*)CONVERTER_JAR, INCBIN_SIZEOF(CONVERTER_JAR));
     if (jar == NULL) {
-        return print_exception(env);
+        return print_exception(vm, env);
     }
 
     jclass main_class = (jclass)env->CallStaticObjectMethod(loader, load_main, jar);
     if (main_class == NULL) {
-        return print_exception(env);
+        return print_exception(vm, env);
     }
 
     jmethodID main_method = env->GetStaticMethodID(main_class, "main", "([Ljava/lang/String;)V");
     if (main_method == NULL) {
-        return print_exception(env);
+        return print_exception(vm, env);
     }
 
     jobjectArray main_args = env->NewObjectArray(argc, env->FindClass("java/lang/String"), NULL);
@@ -215,14 +216,15 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
         }
     }
     if (env->ExceptionCheck()) {
-        return print_exception(env);
+        return print_exception(vm, env);
     }
 
     env->CallStaticVoidMethod(main_class, main_method, main_args);
     if (env->ExceptionCheck()) {
-        return print_exception(env);
+        return print_exception(vm, env);
     }
 
+    vm->DestroyJavaVM();
     return 0;
 }
 
