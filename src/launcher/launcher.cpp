@@ -20,7 +20,10 @@
 static const char VERSION_STRING[] =
     "JFR converter " PROFILER_VERSION " built on " __DATE__ "\n";
 
-INCBIN(EMBEDDED_CLASS_LOADER, "src/helper/one/profiler/EmbeddedClassLoader.class")
+
+#define EMBEDDED_CLASS_LOADER "one/profiler/EmbeddedClassLoader"
+
+INCBIN(CLASS_BYTES, "src/helper/" EMBEDDED_CLASS_LOADER ".class")
 INCBIN(CONVERTER_JAR, "build/jar/jfrconv.jar")
 
 
@@ -182,7 +185,7 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
         return res;
     }
 
-    jclass loader = env->DefineClass(NULL, NULL, (const jbyte*)EMBEDDED_CLASS_LOADER, INCBIN_SIZEOF(EMBEDDED_CLASS_LOADER));
+    jclass loader = env->DefineClass(EMBEDDED_CLASS_LOADER, NULL, (const jbyte*)CLASS_BYTES, INCBIN_SIZEOF(CLASS_BYTES));
     if (loader == NULL) {
         return print_exception(env);
     }
