@@ -20,10 +20,7 @@
 static const char VERSION_STRING[] =
     "JFR converter " PROFILER_VERSION " built on " __DATE__ "\n";
 
-
-#define EMBEDDED_CLASS_LOADER "one/profiler/EmbeddedClassLoader"
-
-INCBIN(CLASS_BYTES, "src/helper/" EMBEDDED_CLASS_LOADER ".class")
+INCLUDE_HELPER_CLASS(EMBEDDED_CLASS_LOADER, CLASS_BYTES, "one/profiler/EmbeddedClassLoader")
 INCBIN(CONVERTER_JAR, "build/jar/jfrconv.jar")
 
 
@@ -160,6 +157,7 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
     JavaVMOption options[argc];
     int o_count = 0;
     options[o_count++].optionString = (char*)"-Dsun.java.command=" APP_BINARY;
+    options[o_count++].optionString = (char*)"-Xss2M";
 
     for (; argc > 0; argc--, argv++) {
         if (strncmp(*argv, "-D", 2) == 0 || strncmp(*argv, "-X", 2) == 0) {
