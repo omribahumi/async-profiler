@@ -3,16 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.PrintStream;
-import java.io.Reader;
+package one.convert;
+
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -41,14 +34,6 @@ public class FlameGraph implements Comparator<FlameGraph.Frame> {
 
     public FlameGraph(Arguments args) {
         this.args = args;
-    }
-
-    public FlameGraph(String... args) {
-        this(new Arguments(args));
-    }
-
-    public void parse() throws IOException {
-        parse(new InputStreamReader(new FileInputStream(args.input), StandardCharsets.UTF_8));
     }
 
     public void parse(Reader in) throws IOException {
@@ -83,17 +68,6 @@ public class FlameGraph implements Comparator<FlameGraph.Frame> {
         frame.self += ticks;
 
         depth = Math.max(depth, trace.length);
-    }
-
-    public void dump() throws IOException {
-        if (args.output == null) {
-            dump(System.out);
-        } else {
-            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(args.output), 32768);
-                 PrintStream out = new PrintStream(bos, false, "UTF-8")) {
-                dump(out);
-            }
-        }
     }
 
     public void dump(PrintStream out) {
@@ -297,25 +271,14 @@ public class FlameGraph implements Comparator<FlameGraph.Frame> {
         return order[f1.getTitleIndex()] - order[f2.getTitleIndex()];
     }
 
-    public static void main(String[] cmdline) throws IOException {
-        Arguments args = new Arguments(cmdline);
-        if (args.input == null) {
-            System.out.println("Usage: java " + FlameGraph.class.getName() + " [options] input.collapsed [output.html]");
-            System.out.println();
-            System.out.println("Options:");
-            System.out.println("  --title TITLE");
-            System.out.println("  --reverse");
-            System.out.println("  --minwidth PERCENT");
-            System.out.println("  --skip FRAMES");
-            System.out.println("  --include PATTERN");
-            System.out.println("  --exclude PATTERN");
-            System.out.println("  --highlight PATTERN");
-            System.exit(1);
+    public static void convert(String input, String output, Arguments args) throws IOException {
+        try (InputStreamReader in = new InputStreamReader(new FileInputStream(input), StandardCharsets.UTF_8);
+             BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(output), 32768);
+             PrintStream out = new PrintStream(bos, false, "UTF-8")) {
+            FlameGraph fg = new FlameGraph(args);
+            fg.parse(in);
+            fg.dump(out);
         }
-
-        FlameGraph fg = new FlameGraph(args);
-        fg.parse();
-        fg.dump();
     }
 
     static class Frame extends HashMap<Integer, Frame> {

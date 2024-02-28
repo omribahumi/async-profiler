@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+package one.convert;
+
 import one.jfr.Dictionary;
 import one.jfr.StackTrace;
 

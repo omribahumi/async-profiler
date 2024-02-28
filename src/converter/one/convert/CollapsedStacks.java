@@ -3,19 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import java.io.BufferedOutputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+package one.convert;
+
 import java.io.PrintStream;
 
 public class CollapsedStacks extends FlameGraph {
     private final StringBuilder sb = new StringBuilder();
     private final PrintStream out;
 
-    public CollapsedStacks(Arguments args) throws IOException {
+    public CollapsedStacks(Arguments args, PrintStream out) {
         super(args);
-        this.out = args.output == null ? System.out : new PrintStream(
-                new BufferedOutputStream(new FileOutputStream(args.output), 32768), false, "UTF-8");
+        this.out = out;
     }
 
     @Override
@@ -31,9 +29,7 @@ public class CollapsedStacks extends FlameGraph {
     }
 
     @Override
-    public void dump() {
-        if (out != System.out) {
-            out.close();
-        }
+    public void dump(PrintStream out) {
+        // Everything has already been printed in addSample()
     }
 }
