@@ -13,7 +13,7 @@ public class Main {
 
     public static void main(String[] argv) throws Exception {
         Arguments args = new Arguments(argv);
-        if (args.files.isEmpty()) {
+        if (args.help || args.files.isEmpty()) {
             usage();
             return;
         }
@@ -51,8 +51,9 @@ public class Main {
     }
 
     private static String replaceExt(String fileName, String ext) {
-        int dot = fileName.lastIndexOf('.', fileName.lastIndexOf(File.separatorChar) + 1);
-        return dot >= 0 ? fileName.substring(0, dot + 1) + ext : fileName + '.' + ext;
+        int slash = fileName.lastIndexOf(File.separatorChar);
+        int dot = fileName.lastIndexOf('.');
+        return dot > slash ? fileName.substring(slash + 1, dot + 1) + ext : fileName.substring(slash + 1) + '.' + ext;
     }
 
     private static boolean isJfr(String fileName) throws IOException {
@@ -75,35 +76,34 @@ public class Main {
             launcher = System.getProperty("sun.java.command");
         }
 
-        System.out.println("Usage: " + launcher + " [options] <input> <output>");
-        System.out.println();
-        System.out.println("Supported conversions:");
-        System.out.println("  collapsed -> html (Flame Graph)");
-        System.out.println("  jfr       -> html, collapsed, pprof");
-        System.out.println();
-        System.out.println("Flame Graph options:");
-        System.out.println("  --title TITLE");
-        System.out.println("  --minwidth PERCENT");
-        System.out.println("  --skip FRAMES");
-        System.out.println("  --reverse");
-        System.out.println("  --include PATTERN");
-        System.out.println("  --exclude PATTERN");
-        System.out.println("  --highlight PATTERN");
-        System.out.println();
-        System.out.println("JFR options:");
-        System.out.println("  --alloc       Allocation profile");
-        System.out.println("  --live        Live object profile");
-        System.out.println("  --lock        Lock contention profile");
-        System.out.println("  --threads     Split stack traces by threads");
-        System.out.println("  --state LIST  Filter samples by thread states: RUNNABLE, SLEEPING, etc.");
-        System.out.println("  --classify    Classify samples into predefined categories");
-        System.out.println("  --total       Accumulate total value (time, bytes, etc.)");
-        System.out.println("  --lines       Show line numbers");
-        System.out.println("  --bci         Show bytecode indices");
-        System.out.println("  --simple      Simple class names instead of FQN");
-        System.out.println("  --norm        Normalize names of hidden classes / lambdas");
-        System.out.println("  --dot         Dotted class names");
-        System.out.println("  --from TIME   Start time in ms (absolute or relative)");
-        System.out.println("  --to TIME     End time in ms (absolute or relative)");
+        System.out.print("Usage: " + launcher + " [options] <input> <output>\n" +
+                "\n" +
+                "Conversion options:\n" +
+                "  -o --output FORMAT    Output format: html, collapsed, pprof\n" +
+                "\n" +
+                "Flame Graph options:\n" +
+                "     --title STRING     Flame Graph title\n" +
+                "     --minwidth X       Skip frames smaller than X%\n" +
+                "     --skip N           Skip N bottom frames\n" +
+                "  -r --reverse          Reverse stack traces (icicle graph)\n" +
+                "  -I --include REGEX    Include only stacks with the specified frames\n" +
+                "  -X --exclude REGEX    Exclude stacks with the specified frames\n" +
+                "     --highlight REGEX  Highlight frames matching the given pattern\n" +
+                "\n" +
+                "JFR options:\n" +
+                "     --alloc            Allocation profile\n" +
+                "     --live             Live object profile\n" +
+                "     --lock             Lock contention profile\n" +
+                "  -t --threads          Split stack traces by threads\n" +
+                "  -s --state LIST       Filter thread states: runnable, sleeping\n" +
+                "     --classify         Classify samples into predefined categories\n" +
+                "     --total            Accumulate total value (time, bytes, etc.)\n" +
+                "     --lines            Show line numbers\n" +
+                "     --bci              Show bytecode indices\n" +
+                "     --simple           Simple class names instead of FQN\n" +
+                "     --norm             Normalize names of hidden classes / lambdas\n" +
+                "     --dot              Dotted class names\n" +
+                "     --from TIME        Start time in ms (absolute or relative)\n" +
+                "     --to TIME          End time in ms (absolute or relative)\n");
     }
 }

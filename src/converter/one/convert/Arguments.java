@@ -19,6 +19,7 @@ public class Arguments {
     public Pattern exclude;
     public double minwidth;
     public int skip;
+    public boolean help;
     public boolean reverse;
     public boolean alloc;
     public boolean live;
@@ -76,22 +77,20 @@ public class Arguments {
 
     private static String alias(char c) {
         switch (c) {
+            case 'h':
+                return "help";
             case 'o':
                 return "output";
-            case 'S':
-                return "state";
+            case 'r':
+                return "reverse";
             case 'I':
                 return "include";
             case 'X':
                 return "exclude";
-            case 'r':
-                return "reverse";
             case 't':
                 return "threads";
             case 's':
-                return "simple";
-            case 'n':
-                return "norm";
+                return "state";
             default:
                 return String.valueOf(c);
         }

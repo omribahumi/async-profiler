@@ -38,6 +38,7 @@ public class JfrToFlame extends JfrConverter {
         }
 
         fg.dump(ps);
+        ps.flush();
     }
 
     public void convertChunk(final FlameGraph fg, Class<? extends Event> eventClass) throws IOException {
