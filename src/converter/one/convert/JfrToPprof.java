@@ -8,191 +8,182 @@ package one.convert;
 import one.jfr.Dictionary;
 import one.jfr.JfrReader;
 import one.jfr.StackTrace;
-import one.jfr.event.ExecutionSample;
+import one.jfr.event.*;
 import one.proto.Proto;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.io.*;
+import java.util.ArrayList;
+import java.util.Collections;
 
 /**
- * Convert a JFR file to pprof
- * <p>
- * Protobuf definition: https://github.com/google/pprof/blob/44fc4e887b6b0cfb196973bcdb1fab95f0b3a75b/proto/profile.proto
+ * Converts .jfr output to <a href="https://github.com/google/pprof">pprof</a>.
  */
 public class JfrToPprof extends JfrConverter {
+    private final Proto profile = new Proto(100000);
+    private final Index<String> strings = new Index<>(String.class, "");
+    private final Index<String> functions = new Index<>(String.class, "");
+    private final Index<Long> locations = new Index<>(Long.class, 0L);
 
-    public static class Method {
-        final byte[] name;
-
-        public Method(final byte[] name) {
-            this.name = name;
-        }
-
-        @Override
-        public int hashCode() {
-            return Arrays.hashCode(name);
-        }
-
-        @Override
-        public boolean equals(final Object other) {
-            return other instanceof Method && Arrays.equals(name, ((Method) other).name);
-        }
-    }
-
-    public static final class Location {
-        final Method method;
-        final int line;
-
-        public Location(final Method method, final int line) {
-            this.method = method;
-            this.line = line;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            Location location = (Location) o;
-
-            if (line != location.line) return false;
-            return method.equals(location.method);
-        }
-
-        @Override
-        public int hashCode() {
-            int result = method.hashCode();
-            result = 31 * result + line;
-            return result;
-        }
-    }
-
-    // Profile IDs
-    public static final int PROFILE_SAMPLE_TYPE = 1;
-    public static final int PROFILE_SAMPLE = 2;
-    public static final int PROFILE_LOCATION = 4;
-    public static final int PROFILE_FUNCTION = 5;
-    public static final int PROFILE_STRING_TABLE = 6;
-    public static final int PROFILE_TIME_NANOS = 9;
-    public static final int PROFILE_DURATION_NANOS = 10;
-    public static final int PROFILE_COMMENT = 13;
-    public static final int PROFILE_DEFAULT_SAMPLE_TYPE = 14;
-
-    // ValueType IDs
-    public static final int VALUETYPE_TYPE = 1;
-    public static final int VALUETYPE_UNIT = 2;
-
-    // Sample IDs
-    public static final int SAMPLE_LOCATION_ID = 1;
-    public static final int SAMPLE_VALUE = 2;
-
-    // Location IDs
-    public static final int LOCATION_ID = 1;
-    public static final int LOCATION_LINE = 4;
-
-    // Line IDs
-    public static final int LINE_FUNCTION_ID = 1;
-    public static final int LINE_LINE = 2;
-
-    // Function IDs
-    public static final int FUNCTION_ID = 1;
-    public static final int FUNCTION_NAME = 2;
+    private Dictionary<String> methodNames;
+    private Classifier classifier;
+    private double ticksToNanos;
+    private long lastTicks;
 
     public JfrToPprof(JfrReader jfr, Arguments args) {
         super(jfr, args);
     }
 
-    // `Proto` instances are mutable, careful with reordering
-    public void dump(final OutputStream out) throws IOException {
-        // Mutable IDs, need to start at 1
-        int functionId = 1;
-        int locationId = 1;
-        int stringId = 1;
+    public void dump(OutputStream out) throws IOException {
+        Class<? extends Event> eventClass =
+                args.live ? LiveObject.class :
+                        args.alloc ? AllocationSample.class :
+                                args.lock ? ContendedLock.class : ExecutionSample.class;
 
-        // Used to de-dupe
-        final Map<Method, Integer> functions = new HashMap<>();
-        final Map<Location, Integer> locations = new HashMap<>();
+        profile.field(1, valueType("cpu", "nanoseconds"))
+                .field(13, strings.index("async-profiler"));
+        lastTicks = jfr.startTicks;
 
-        final Proto profile = new Proto(200_000)
-                .field(PROFILE_TIME_NANOS, jfr.startNanos)
-                .field(PROFILE_DURATION_NANOS, jfr.durationNanos())
-                .field(PROFILE_DEFAULT_SAMPLE_TYPE, 0L)
-                .field(PROFILE_STRING_TABLE, "") // "" needs to be index 0
-                .field(PROFILE_STRING_TABLE, "async-profiler")
-                .field(PROFILE_COMMENT, stringId++);
-
-        final Proto sampleType = new Proto(100);
-
-        profile.field(PROFILE_STRING_TABLE, "cpu");
-        sampleType.field(VALUETYPE_TYPE, stringId++);
-
-        profile.field(PROFILE_STRING_TABLE, "nanoseconds");
-        sampleType.field(VALUETYPE_UNIT, stringId++);
-
-        profile.field(PROFILE_SAMPLE_TYPE, sampleType);
-
-        final Dictionary<StackTrace> stackTraces = jfr.stackTraces;
-        long previousTime = jfr.startTicks; // Mutate this to keep track of time deltas
-
-        // Iterate over samples
-        for (ExecutionSample jfrSample; (jfrSample = jfr.readEvent(ExecutionSample.class)) != null; ) {
-            final StackTrace stackTrace = stackTraces.get(jfrSample.stackTraceId);
-            final long[] methods = stackTrace.methods;
-            final byte[] types = stackTrace.types;
-
-            final long nanosSinceLastSample = (jfrSample.time - previousTime) * 1_000_000_000 / jfr.ticksPerSec;
-            final Proto sample = new Proto(1_000).field(SAMPLE_VALUE, nanosSinceLastSample);
-
-            for (int current = 0; current < methods.length; current++) {
-                final byte methodType = types[current];
-                final long methodIdentifier = methods[current];
-                final byte[] methodName = getMethodNameBytes(methodIdentifier, methodType);
-                final Method method = new Method(methodName);
-                final int line = stackTrace.locations[current] >>> 16;
-
-                final Integer methodId = functions.get(method);
-                if (null == methodId) {
-                    final int funcId = functionId++;
-                    profile.field(PROFILE_STRING_TABLE, methodName);
-                    final Proto function = new Proto(16)
-                            .field(FUNCTION_ID, funcId)
-                            .field(FUNCTION_NAME, stringId++);
-
-                    profile.field(PROFILE_FUNCTION, function);
-
-                    functions.put(method, funcId);
-                }
-                final Location locKey = new Location(method, line);
-                final Integer locaId = locations.get(locKey);
-                if (null == locaId) {
-                    final int locId = locationId++;
-                    final Proto locLine = new Proto(16).field(LINE_FUNCTION_ID, functions.get(method));
-                    if (line > 0) {
-                        locLine.field(LINE_LINE, line);
-                    }
-
-                    final Proto location = new Proto(16)
-                            .field(LOCATION_ID, locId)
-                            .field(LOCATION_LINE, locLine);
-
-                    profile.field(PROFILE_LOCATION, location);
-
-                    locations.put(locKey, locId);
-                }
-
-                sample.field(SAMPLE_LOCATION_ID, locations.get(locKey));
-            }
-
-            profile.field(PROFILE_SAMPLE, sample);
-
-            previousTime = jfrSample.time;
+        jfr.stopAtNewChunk = true;
+        while (jfr.hasMoreChunks()) {
+            convertChunk(eventClass);
         }
 
+        Long[] locations = this.locations.keys();
+        for (int i = 1; i < locations.length; i++) {
+            profile.field(4, location(i, locations[i]));
+        }
+
+        String[] functions = this.functions.keys();
+        for (int i = 1; i < functions.length; i++) {
+            profile.field(5, function(i, functions[i]));
+        }
+
+        String[] strings = this.strings.keys();
+        for (String string : strings) {
+            profile.field(6, string);
+        }
+
+        profile.field(9, jfr.startNanos)
+                .field(10, jfr.durationNanos());
+
         out.write(profile.buffer(), 0, profile.size());
+    }
+
+    public void convertChunk(Class<? extends Event> eventClass) throws IOException {
+        long threadStates = 0;
+        if (args.state != null) {
+            for (String state : args.state.split(",")) {
+                int key = jfr.getEnumKey("jdk.types.ThreadState", "STATE_" + state.toUpperCase());
+                if (key >= 0) threadStates |= 1L << key;
+            }
+        }
+
+        long startTicks = args.from != 0 ? toTicks(args.from) : Long.MIN_VALUE;
+        long endTicks = args.to != 0 ? toTicks(args.to) : Long.MAX_VALUE;
+
+        ArrayList<Event> list = new ArrayList<>();
+        for (Event event; (event = jfr.readEvent(eventClass)) != null; ) {
+            if (event.time >= startTicks && event.time <= endTicks) {
+                if (threadStates == 0 || (threadStates & (1L << ((ExecutionSample) event).threadState)) != 0) {
+                    list.add(event);
+                }
+            }
+        }
+        Collections.sort(list);
+
+        methodNames = new Dictionary<>();
+        classifier = new Classifier(methodNames);
+        ticksToNanos = 1e9 / jfr.ticksPerSec;
+
+        for (Event event : list) {
+            profile.field(2, sample(event));
+        }
+    }
+
+    private Proto sample(Event event) {
+        Proto sample = new Proto(100);
+
+        StackTrace stackTrace = jfr.stackTraces.get(event.stackTraceId);
+        if (stackTrace != null) {
+            long[] methods = stackTrace.methods;
+            byte[] types = stackTrace.types;
+            int[] lines = stackTrace.locations;
+            for (int i = 0; i < methods.length; i++) {
+                String methodName = getMethodName(methods[i], types[i], methodNames);
+                int function = functions.index(methodName);
+                sample.field(1, locations.index((long) function << 16 | lines[i] >>> 16));
+            }
+        }
+
+        sample.field(2, (long) ((event.time - lastTicks) * ticksToNanos));
+        lastTicks = event.time;
+
+        long classId = event.classId();
+        if (classId != 0) {
+            sample.field(3, label("class", getClassName(classId)));
+            if (event instanceof AllocationSample) {
+                sample.field(3, label("allocation_size", event.value(), "bytes"));
+            } else if (event instanceof ContendedLock) {
+                sample.field(3, label("duration", event.value(), "nanoseconds"));
+            }
+        }
+
+        if (args.threads && event.tid != 0) {
+            sample.field(3, label("thread", getThreadName(event.tid)));
+        }
+        if (args.classify && stackTrace != null) {
+            sample.field(3, label("category", classifier.getCategoryName(stackTrace)));
+        }
+
+        return sample;
+    }
+
+    private Proto valueType(String type, String unit) {
+        return new Proto(16)
+                .field(1, strings.index(type))
+                .field(2, strings.index(unit));
+    }
+
+    private Proto label(String key, String str) {
+        return new Proto(16)
+                .field(1, strings.index(key))
+                .field(2, strings.index(str));
+    }
+
+    private Proto label(String key, long num, String unit) {
+        return new Proto(16)
+                .field(1, strings.index(key))
+                .field(3, num)
+                .field(4, strings.index(unit));
+    }
+
+    private Proto location(int id, long location) {
+        return new Proto(16)
+                .field(1, id)
+                .field(4, line((int) (location >>> 16), (int) location & 0xffff));
+    }
+
+    private Proto line(int functionId, int line) {
+        return new Proto(16)
+                .field(1, functionId)
+                .field(2, line);
+    }
+
+    private Proto function(int id, String name) {
+        return new Proto(16)
+                .field(1, id)
+                .field(2, strings.index(name));
+    }
+
+    // millis can be an absolute timestamp or an offset from the beginning/end of the recording
+    private long toTicks(long millis) {
+        long nanos = millis * 1_000_000;
+        if (millis < 0) {
+            nanos += jfr.endNanos;
+        } else if (millis < 1500000000000L) {
+            nanos += jfr.startNanos;
+        }
+        return (long) ((nanos - jfr.chunkStartNanos) * (jfr.ticksPerSec / 1e9)) + jfr.chunkStartTicks;
     }
 
     public static void convert(String input, String output, Arguments args) throws IOException {

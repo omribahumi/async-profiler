@@ -11,13 +11,10 @@ import one.jfr.JfrReader;
 import one.jfr.MethodRef;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 import static one.convert.FlameGraph.*;
 
 public class JfrConverter {
-    protected static final byte[] UNKNOWN_NAME = "[unknown]".getBytes();
-
     protected final JfrReader jfr;
     protected final Arguments args;
 
@@ -53,28 +50,6 @@ public class JfrConverter {
             }
             String methodStr = new String(methodName, StandardCharsets.UTF_8);
             return classStr + '.' + methodStr;
-        }
-    }
-
-    public byte[] getMethodNameBytes(long methodId, byte methodType) {
-        MethodRef method = jfr.methods.get(methodId);
-        if (method == null) {
-            return UNKNOWN_NAME;
-        }
-
-        ClassRef cls = jfr.classes.get(method.cls);
-        byte[] className = jfr.symbols.get(cls.name);
-        byte[] methodName = jfr.symbols.get(method.name);
-
-        if (className == null || className.length == 0 || isNativeFrame(methodType)) {
-            return methodName;
-        } else if (methodName == null || methodName.length == 0) {
-            return className;
-        } else {
-            byte[] fullName = Arrays.copyOf(className, className.length + 1 + methodName.length);
-            fullName[className.length] = '.';
-            System.arraycopy(methodName, 0, fullName, className.length + 1, methodName.length);
-            return fullName;
         }
     }
 

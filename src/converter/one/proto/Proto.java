@@ -5,6 +5,7 @@
 
 package one.proto;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
@@ -51,7 +52,8 @@ public class Proto {
 
     public Proto field(int index, String s) {
         tag(index, 2);
-        writeString(s);
+        byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
+        writeBytes(bytes, 0, bytes.length);
         return this;
     }
 
@@ -101,16 +103,6 @@ public class Proto {
         buf[pos + 6] = (byte) (n >>> 48);
         buf[pos + 7] = (byte) (n >>> 56);
         pos += 8;
-    }
-
-    public void writeString(String s) {
-        int length = s.length();
-        writeInt(length);
-        ensureCapacity(length);
-
-        for (int i = 0; i < length; i++) {
-            buf[pos++] = (byte) s.charAt(i);
-        }
     }
 
     public void writeBytes(byte[] bytes, int offset, int length) {
