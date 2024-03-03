@@ -12,7 +12,7 @@ import one.jfr.MethodRef;
 
 import java.nio.charset.StandardCharsets;
 
-import static one.convert.FlameGraph.*;
+import static one.convert.Frame.*;
 
 public class JfrConverter {
     protected final JfrReader jfr;
@@ -134,10 +134,10 @@ public class JfrConverter {
     }
 
     private boolean isNativeFrame(byte methodType) {
-        // In JDK Flight Recorder, FRAME_NATIVE denotes Java native methods,
-        // while in async-profiler, FRAME_NATIVE is for C methods
-        return methodType == FRAME_NATIVE && jfr.getEnumValue("jdk.types.FrameType", FRAME_KERNEL) != null ||
-                methodType == FRAME_CPP ||
-                methodType == FRAME_KERNEL;
+        // In JDK Flight Recorder, TYPE_NATIVE denotes Java native methods,
+        // while in async-profiler, TYPE_NATIVE is for C methods
+        return methodType == TYPE_NATIVE && jfr.getEnumValue("jdk.types.FrameType", TYPE_KERNEL) != null ||
+                methodType == TYPE_CPP ||
+                methodType == TYPE_KERNEL;
     }
 }

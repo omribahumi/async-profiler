@@ -9,22 +9,14 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.regex.Pattern;
 
-public class FlameGraph implements Comparator<FlameGraph.Frame> {
-    public static final byte FRAME_INTERPRETED = 0;
-    public static final byte FRAME_JIT_COMPILED = 1;
-    public static final byte FRAME_INLINED = 2;
-    public static final byte FRAME_NATIVE = 3;
-    public static final byte FRAME_CPP = 4;
-    public static final byte FRAME_KERNEL = 5;
-    public static final byte FRAME_C1_COMPILED = 6;
+public class FlameGraph implements Comparator<Frame> {
+    private static final Frame[] EMPTY_FRAME_ARRAY = {};
 
     private final Arguments args;
-    private final Map<String, Integer> cpool = new HashMap<>();
-    private final Frame root = new Frame(getFrameKey("", FRAME_NATIVE));
+    private final Index<String> cpool = new Index<>(String.class, "");
+    private final Frame root = new Frame(getFrameKey("", Frame.TYPE_NATIVE));
     private int[] order;
     private int depth;
     private int lastLevel;
@@ -152,7 +144,7 @@ public class FlameGraph implements Comparator<FlameGraph.Frame> {
         lastX = x;
         lastTotal = frame.total;
 
-        Frame[] children = frame.values().toArray(Frame.EMPTY_ARRAY);
+        Frame[] children = frame.values().toArray(EMPTY_FRAME_ARRAY);
         Arrays.sort(children, this);
 
         x += frame.self;
@@ -185,14 +177,7 @@ public class FlameGraph implements Comparator<FlameGraph.Frame> {
     }
 
     private int getFrameKey(String title, byte type) {
-        Integer key = cpool.get(title);
-        if (key != null) {
-            return key | type << 28;
-        } else {
-            int size = cpool.size();
-            cpool.put(title, size);
-            return size | type << 28;
-        }
+        return cpool.get(title) | type << Frame.TYPE_SHIFT;
     }
 
     private Frame getChild(Frame frame, String title, byte type) {
@@ -209,22 +194,22 @@ public class FlameGraph implements Comparator<FlameGraph.Frame> {
 
         Frame child;
         if (title.endsWith("_[j]")) {
-            child = getChild(frame, stripSuffix(title), FRAME_JIT_COMPILED);
+            child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED);
         } else if (title.endsWith("_[i]")) {
-            (child = getChild(frame, stripSuffix(title), FRAME_JIT_COMPILED)).inlined += ticks;
+            (child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED)).inlined += ticks;
         } else if (title.endsWith("_[k]")) {
-            child = getChild(frame, stripSuffix(title), FRAME_KERNEL);
+            child = getChild(frame, stripSuffix(title), Frame.TYPE_KERNEL);
         } else if (title.endsWith("_[1]")) {
-            (child = getChild(frame, stripSuffix(title), FRAME_JIT_COMPILED)).c1 += ticks;
+            (child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED)).c1 += ticks;
         } else if (title.endsWith("_[0]")) {
-            (child = getChild(frame, stripSuffix(title), FRAME_JIT_COMPILED)).interpreted += ticks;
+            (child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED)).interpreted += ticks;
         } else if (title.contains("::") || title.startsWith("-[") || title.startsWith("+[")) {
-            child = getChild(frame, title, FRAME_CPP);
+            child = getChild(frame, title, Frame.TYPE_CPP);
         } else if (title.indexOf('/') > 0 && title.charAt(0) != '['
                 || title.indexOf('.') > 0 && Character.isUpperCase(title.charAt(0))) {
-            child = getChild(frame, title, FRAME_JIT_COMPILED);
+            child = getChild(frame, title, Frame.TYPE_JIT_COMPILED);
         } else {
-            child = getChild(frame, title, FRAME_NATIVE);
+            child = getChild(frame, title, Frame.TYPE_NATIVE);
         }
         return child;
     }
@@ -278,47 +263,6 @@ public class FlameGraph implements Comparator<FlameGraph.Frame> {
             FlameGraph fg = new FlameGraph(args);
             fg.parse(in);
             fg.dump(out);
-        }
-    }
-
-    static class Frame extends HashMap<Integer, Frame> {
-        static final Frame[] EMPTY_ARRAY = {};
-
-        final int key;
-        long total;
-        long self;
-        long inlined, c1, interpreted;
-
-        Frame(int key) {
-            this.key = key;
-        }
-
-        byte getType() {
-            if (inlined * 3 >= total) {
-                return FRAME_INLINED;
-            } else if (c1 * 2 >= total) {
-                return FRAME_C1_COMPILED;
-            } else if (interpreted * 2 >= total) {
-                return FRAME_INTERPRETED;
-            } else {
-                return (byte) (key >>> 28);
-            }
-        }
-
-        int getTitleIndex() {
-            return key & ((1 << 28) - 1);
-        }
-
-        int depth(long cutoff) {
-            int depth = 0;
-            if (size() > 0) {
-                for (Frame child : values()) {
-                    if (child.total >= cutoff) {
-                        depth = Math.max(depth, child.depth(cutoff));
-                    }
-                }
-            }
-            return depth + 1;
         }
     }
 }
