@@ -168,8 +168,8 @@ public class FlameGraph implements Comparator<Frame> {
                 return true;
             }
             if (include != null && include.matcher(frame).matches()) {
+                if (exclude == null) return false;
                 include = null;
-                if (exclude == null) break;
             }
         }
 
