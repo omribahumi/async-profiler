@@ -132,7 +132,7 @@ public class JfrToPprof extends JfrConverter {
             sample.field(3, label("thread", getThreadName(event.tid)));
         }
         if (args.classify && stackTrace != null) {
-            sample.field(3, label("category", classifier.getCategoryName(stackTrace)));
+            sample.field(3, label("category", classifier.getCategory(stackTrace).title));
         }
 
         return sample;

@@ -16,15 +16,23 @@ public class Frame extends HashMap<Integer, Frame> {
     public static final byte TYPE_KERNEL = 5;
     public static final byte TYPE_C1_COMPILED = 6;
 
-    static final int TYPE_SHIFT = 28;
+    private static final int TYPE_SHIFT = 28;
 
     final int key;
     long total;
     long self;
     long inlined, c1, interpreted;
 
-    Frame(int key) {
+    private Frame(int key) {
         this.key = key;
+    }
+
+    Frame(int titleIndex, byte type) {
+        this(titleIndex | type << TYPE_SHIFT);
+    }
+
+    Frame getChild(int titleIndex, byte type) {
+        return super.computeIfAbsent(titleIndex | type << TYPE_SHIFT, Frame::new);
     }
 
     int getTitleIndex() {

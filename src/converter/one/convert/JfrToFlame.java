@@ -12,12 +12,12 @@ import one.jfr.event.*;
 
 import java.io.*;
 
+import static one.convert.Frame.*;
+
 /**
  * Converts .jfr output to HTML Flame Graph.
  */
 public class JfrToFlame extends JfrConverter {
-
-    private static final String[] FRAME_SUFFIX = {"_[0]", "_[j]", "_[i]", "", "", "_[k]", "_[1]"};
 
     public JfrToFlame(JfrReader jfr, Arguments args) {
         super(jfr, args);
@@ -71,6 +71,8 @@ public class JfrToFlame extends JfrConverter {
 
         // Don't use lambda for faster startup
         agg.forEach(new EventAggregator.Visitor() {
+            final CallStack stack = new CallStack();
+
             @Override
             public void visit(Event event, long value) {
                 StackTrace stackTrace = jfr.stackTraces.get(event.stackTraceId);
@@ -80,20 +82,15 @@ public class JfrToFlame extends JfrConverter {
                     byte[] types = stackTrace.types;
                     int[] locations = stackTrace.locations;
                     long classId = event.classId();
-                    String[] trace = new String[methods.length
-                            + (args.threads ? 1 : 0)
-                            + (args.classify ? 1 : 0)
-                            + (classId != 0 ? 1 : 0)];
+
                     if (args.threads) {
-                        trace[0] = getThreadName(event.tid);
+                        stack.push(getThreadName(event.tid), TYPE_NATIVE);
                     }
-                    int idx = trace.length;
-                    if (classId != 0) {
-                        String suffix = (event instanceof AllocationSample)
-                                && ((AllocationSample) event).tlabSize == 0 ? "_[k]" : "_[i]";
-                        trace[--idx] = getClassName(classId) + suffix;
+                    if (args.classify) {
+                        Classifier.Category category = classifier.getCategory(stackTrace);
+                        stack.push(category.title, category.type);
                     }
-                    for (int i = 0; i < methods.length; i++) {
+                    for (int i = methods.length; --i >= 0; ) {
                         String methodName = getMethodName(methods[i], types[i], methodNames);
                         int location;
                         if (args.lines && (location = locations[i] >>> 16) != 0) {
@@ -101,12 +98,15 @@ public class JfrToFlame extends JfrConverter {
                         } else if (args.bci && (location = locations[i] & 0xffff) != 0) {
                             methodName += "@" + location;
                         }
-                        trace[--idx] = methodName + FRAME_SUFFIX[types[i]];
+                        stack.push(methodName, types[i]);
                     }
-                    if (args.classify) {
-                        trace[--idx] = classifier.getCategoryName(stackTrace);
+                    if (classId != 0) {
+                        stack.push(getClassName(classId), (event instanceof AllocationSample)
+                                && ((AllocationSample) event).tlabSize == 0 ? TYPE_KERNEL : TYPE_INLINED);
                     }
-                    fg.addSample(trace, scale ? (long) (value * ticksToNanos) : value);
+
+                    fg.addSample(stack, scale ? (long) (value * ticksToNanos) : value);
+                    stack.size = 0;
                 }
             }
         });

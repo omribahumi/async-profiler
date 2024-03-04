@@ -11,12 +11,15 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.regex.Pattern;
 
+import static one.convert.Frame.*;
+
 public class FlameGraph implements Comparator<Frame> {
     private static final Frame[] EMPTY_FRAME_ARRAY = {};
+    private static final byte HAS_SUFFIX = (byte) 0x80;
 
     private final Arguments args;
     private final Index<String> cpool = new Index<>(String.class, "");
-    private final Frame root = new Frame(getFrameKey("", Frame.TYPE_NATIVE));
+    private final Frame root = new Frame(0, TYPE_NATIVE);
     private int[] order;
     private int depth;
     private int lastLevel;
@@ -29,37 +32,51 @@ public class FlameGraph implements Comparator<Frame> {
     }
 
     public void parse(Reader in) throws IOException {
+        CallStack stack = new CallStack();
+
         try (BufferedReader br = new BufferedReader(in)) {
             for (String line; (line = br.readLine()) != null; ) {
                 int space = line.lastIndexOf(' ');
                 if (space <= 0) continue;
 
-                String[] trace = line.substring(0, space).split(";");
                 long ticks = Long.parseLong(line.substring(space + 1));
-                addSample(trace, ticks);
+
+                for (int from = 0, to; from < space; from = to + 1) {
+                    if ((to = line.indexOf(';', from)) < 0) to = space;
+                    String name = line.substring(from, to);
+                    byte type = detectType(name);
+                    if ((type & HAS_SUFFIX) != 0) {
+                        name = name.substring(0, name.length() - 4);
+                        type ^= HAS_SUFFIX;
+                    }
+                    stack.push(name, type);
+                }
+
+                addSample(stack, ticks);
+                stack.size = 0;
             }
         }
     }
 
-    public void addSample(String[] trace, long ticks) {
-        if (excludeTrace(trace)) {
+    public void addSample(CallStack stack, long ticks) {
+        if (excludeStack(stack)) {
             return;
         }
 
         Frame frame = root;
         if (args.reverse) {
-            for (int i = trace.length; --i >= args.skip; ) {
-                frame = addChild(frame, trace[i], ticks);
+            for (int i = stack.size; --i >= args.skip; ) {
+                frame = addChild(frame, stack.names[i], stack.types[i], ticks);
             }
         } else {
-            for (int i = args.skip; i < trace.length; i++) {
-                frame = addChild(frame, trace[i], ticks);
+            for (int i = args.skip; i < stack.size; i++) {
+                frame = addChild(frame, stack.names[i], stack.types[i], ticks);
             }
         }
         frame.total += ticks;
         frame.self += ticks;
 
-        depth = Math.max(depth, trace.length);
+        depth = Math.max(depth, stack.size);
     }
 
     public void dump(PrintStream out) {
@@ -156,18 +173,18 @@ public class FlameGraph implements Comparator<Frame> {
         }
     }
 
-    private boolean excludeTrace(String[] trace) {
+    private boolean excludeStack(CallStack stack) {
         Pattern include = args.include;
         Pattern exclude = args.exclude;
         if (include == null && exclude == null) {
             return false;
         }
 
-        for (String frame : trace) {
-            if (exclude != null && exclude.matcher(frame).matches()) {
+        for (int i = 0; i < stack.size; i++) {
+            if (exclude != null && exclude.matcher(stack.names[i]).matches()) {
                 return true;
             }
-            if (include != null && include.matcher(frame).matches()) {
+            if (include != null && include.matcher(stack.names[i]).matches()) {
                 if (exclude == null) return false;
                 include = null;
             }
@@ -176,45 +193,50 @@ public class FlameGraph implements Comparator<Frame> {
         return include != null;
     }
 
-    private int getFrameKey(String title, byte type) {
-        return cpool.get(title) | type << Frame.TYPE_SHIFT;
-    }
-
-    private Frame getChild(Frame frame, String title, byte type) {
-        int key = getFrameKey(title, type);
-        Frame child = frame.get(key);
-        if (child == null) {
-            frame.put(key, child = new Frame(key));
-        }
-        return child;
-    }
-
-    private Frame addChild(Frame frame, String title, long ticks) {
+    private Frame addChild(Frame frame, String title, byte type, long ticks) {
         frame.total += ticks;
 
+        int titleIndex = cpool.index(title);
+
         Frame child;
-        if (title.endsWith("_[j]")) {
-            child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED);
-        } else if (title.endsWith("_[i]")) {
-            (child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED)).inlined += ticks;
-        } else if (title.endsWith("_[k]")) {
-            child = getChild(frame, stripSuffix(title), Frame.TYPE_KERNEL);
-        } else if (title.endsWith("_[1]")) {
-            (child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED)).c1 += ticks;
-        } else if (title.endsWith("_[0]")) {
-            (child = getChild(frame, stripSuffix(title), Frame.TYPE_JIT_COMPILED)).interpreted += ticks;
-        } else if (title.contains("::") || title.startsWith("-[") || title.startsWith("+[")) {
-            child = getChild(frame, title, Frame.TYPE_CPP);
-        } else if (title.indexOf('/') > 0 && title.charAt(0) != '['
-                || title.indexOf('.') > 0 && Character.isUpperCase(title.charAt(0))) {
-            child = getChild(frame, title, Frame.TYPE_JIT_COMPILED);
-        } else {
-            child = getChild(frame, title, Frame.TYPE_NATIVE);
+        switch (type) {
+            case TYPE_INTERPRETED:
+                (child = frame.getChild(titleIndex, TYPE_JIT_COMPILED)).interpreted += ticks;
+                break;
+            case TYPE_INLINED:
+                (child = frame.getChild(titleIndex, TYPE_JIT_COMPILED)).inlined += ticks;
+                break;
+            case TYPE_C1_COMPILED:
+                (child = frame.getChild(titleIndex, TYPE_JIT_COMPILED)).c1 += ticks;
+                break;
+            default:
+                child = frame.getChild(titleIndex, type);
         }
         return child;
     }
 
-    static int getCommonPrefix(String a, String b) {
+    private static byte detectType(String title) {
+        if (title.endsWith("_[j]")) {
+            return TYPE_JIT_COMPILED | HAS_SUFFIX;
+        } else if (title.endsWith("_[i]")) {
+            return TYPE_INLINED | HAS_SUFFIX;
+        } else if (title.endsWith("_[k]")) {
+            return TYPE_KERNEL | HAS_SUFFIX;
+        } else if (title.endsWith("_[0]")) {
+            return TYPE_INTERPRETED | HAS_SUFFIX;
+        } else if (title.endsWith("_[1]")) {
+            return TYPE_C1_COMPILED | HAS_SUFFIX;
+        } else if (title.contains("::") || title.startsWith("-[") || title.startsWith("+[")) {
+            return TYPE_CPP;
+        } else if (title.indexOf('/') > 0 && title.charAt(0) != '['
+                || title.indexOf('.') > 0 && Character.isUpperCase(title.charAt(0))) {
+            return TYPE_JIT_COMPILED;
+        } else {
+            return TYPE_NATIVE;
+        }
+    }
+
+    private static int getCommonPrefix(String a, String b) {
         int length = Math.min(a.length(), b.length());
         for (int i = 0; i < length; i++) {
             if (a.charAt(i) != b.charAt(i) || a.charAt(i) > 127) {
@@ -224,11 +246,7 @@ public class FlameGraph implements Comparator<Frame> {
         return length;
     }
 
-    static String stripSuffix(String title) {
-        return title.substring(0, title.length() - 4);
-    }
-
-    static String escape(String s) {
+    private static String escape(String s) {
         if (s.indexOf('\\') >= 0) s = s.replace("\\", "\\\\");
         if (s.indexOf('\'') >= 0) s = s.replace("'", "\\'");
         return s;
@@ -241,7 +259,7 @@ public class FlameGraph implements Comparator<Frame> {
             }
 
             ByteArrayOutputStream result = new ByteArrayOutputStream();
-            byte[] buffer = new byte[64 * 1024];
+            byte[] buffer = new byte[32768];
             for (int length; (length = stream.read(buffer)) != -1; ) {
                 result.write(buffer, 0, length);
             }
