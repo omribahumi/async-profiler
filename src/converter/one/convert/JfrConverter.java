@@ -9,18 +9,79 @@ import one.jfr.ClassRef;
 import one.jfr.Dictionary;
 import one.jfr.JfrReader;
 import one.jfr.MethodRef;
+import one.jfr.event.*;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.function.Consumer;
 
 import static one.convert.Frame.*;
 
-public class JfrConverter {
+public abstract class JfrConverter {
     protected final JfrReader jfr;
     protected final Arguments args;
 
     public JfrConverter(JfrReader jfr, Arguments args) {
         this.jfr = jfr;
         this.args = args;
+    }
+
+    public void convert() throws IOException {
+        jfr.stopAtNewChunk = true;
+        while (jfr.hasMoreChunks()) {
+            convertChunk();
+        }
+    }
+
+    protected abstract void convertChunk() throws IOException;
+
+    protected void readEvents(Consumer<Event> consumer) throws IOException {
+        Class<? extends Event> eventClass =
+                args.live ? LiveObject.class :
+                        args.alloc ? AllocationSample.class :
+                                args.lock ? ContendedLock.class : ExecutionSample.class;
+
+        long threadStates = 0;
+        if (args.state != null) {
+            for (String state : args.state.toUpperCase().split(",")) {
+                threadStates |= 1L << toThreadState(state);
+            }
+        }
+
+        long startTicks = args.from != 0 ? toTicks(args.from) : Long.MIN_VALUE;
+        long endTicks = args.to != 0 ? toTicks(args.to) : Long.MAX_VALUE;
+
+        for (Event event; (event = jfr.readEvent(eventClass)) != null; ) {
+            if (event.time >= startTicks && event.time <= endTicks) {
+                if (threadStates == 0 || (threadStates & (1L << ((ExecutionSample) event).threadState)) != 0) {
+                    consumer.accept(event);
+                }
+            }
+        }
+    }
+
+    protected int toThreadState(String name) {
+        Map<Integer, String> threadStates = jfr.enums.get("jdk.types.ThreadState");
+        if (threadStates != null) {
+            for (Map.Entry<Integer, String> entry : threadStates.entrySet()) {
+                if (entry.getValue().startsWith(name, 6)) {
+                    return entry.getKey();
+                }
+            }
+        }
+        throw new IllegalArgumentException("Unknown thread state: " + name);
+    }
+
+    // millis can be an absolute timestamp or an offset from the beginning/end of the recording
+    protected long toTicks(long millis) {
+        long nanos = millis * 1_000_000;
+        if (millis < 0) {
+            nanos += jfr.endNanos;
+        } else if (millis < 1500000000000L) {
+            nanos += jfr.startNanos;
+        }
+        return (long) ((nanos - jfr.chunkStartNanos) * (jfr.ticksPerSec / 1e9)) + jfr.chunkStartTicks;
     }
 
     public String getMethodName(long methodId, byte methodType, Dictionary<String> cache) {

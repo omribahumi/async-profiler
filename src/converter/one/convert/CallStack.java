@@ -21,4 +21,8 @@ public class CallStack {
         types[size] = type;
         size++;
     }
+
+    public void clear() {
+        size = 0;
+    }
 }

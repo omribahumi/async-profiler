@@ -34,19 +34,12 @@ public class JfrToPprof extends JfrConverter {
     }
 
     public void dump(OutputStream out) throws IOException {
-        Class<? extends Event> eventClass =
-                args.live ? LiveObject.class :
-                        args.alloc ? AllocationSample.class :
-                                args.lock ? ContendedLock.class : ExecutionSample.class;
-
-        profile.field(1, valueType("cpu", "nanoseconds"))
+        String type = args.alloc || args.live ? "allocations" : args.lock ? "locks" : "cpu";
+        profile.field(1, valueType(type, "nanoseconds"))
                 .field(13, strings.index("async-profiler"));
         lastTicks = jfr.startTicks;
 
-        jfr.stopAtNewChunk = true;
-        while (jfr.hasMoreChunks()) {
-            convertChunk(eventClass);
-        }
+        convert();
 
         Long[] locations = this.locations.keys();
         for (int i = 1; i < locations.length; i++) {
@@ -69,26 +62,10 @@ public class JfrToPprof extends JfrConverter {
         out.write(profile.buffer(), 0, profile.size());
     }
 
-    public void convertChunk(Class<? extends Event> eventClass) throws IOException {
-        long threadStates = 0;
-        if (args.state != null) {
-            for (String state : args.state.split(",")) {
-                int key = jfr.getEnumKey("jdk.types.ThreadState", "STATE_" + state.toUpperCase());
-                if (key >= 0) threadStates |= 1L << key;
-            }
-        }
-
-        long startTicks = args.from != 0 ? toTicks(args.from) : Long.MIN_VALUE;
-        long endTicks = args.to != 0 ? toTicks(args.to) : Long.MAX_VALUE;
-
+    @Override
+    protected void convertChunk() throws IOException {
         ArrayList<Event> list = new ArrayList<>();
-        for (Event event; (event = jfr.readEvent(eventClass)) != null; ) {
-            if (event.time >= startTicks && event.time <= endTicks) {
-                if (threadStates == 0 || (threadStates & (1L << ((ExecutionSample) event).threadState)) != 0) {
-                    list.add(event);
-                }
-            }
-        }
+        readEvents(list::add);
         Collections.sort(list);
 
         methodNames = new Dictionary<>();
@@ -173,17 +150,6 @@ public class JfrToPprof extends JfrConverter {
         return new Proto(16)
                 .field(1, id)
                 .field(2, strings.index(name));
-    }
-
-    // millis can be an absolute timestamp or an offset from the beginning/end of the recording
-    private long toTicks(long millis) {
-        long nanos = millis * 1_000_000;
-        if (millis < 0) {
-            nanos += jfr.endNanos;
-        } else if (millis < 1500000000000L) {
-            nanos += jfr.startNanos;
-        }
-        return (long) ((nanos - jfr.chunkStartNanos) * (jfr.ticksPerSec / 1e9)) + jfr.chunkStartTicks;
     }
 
     public static void convert(String input, String output, Arguments args) throws IOException {

@@ -15,6 +15,8 @@ import static one.convert.Frame.*;
 
 public class FlameGraph implements Comparator<Frame> {
     private static final Frame[] EMPTY_FRAME_ARRAY = {};
+    // TODO
+    private static final String[] FRAME_SUFFIX = {"_[0]", "_[j]", "_[i]", "", "", "_[k]", "_[1]"};
     private static final byte HAS_SUFFIX = (byte) 0x80;
 
     private final Arguments args;
@@ -53,7 +55,7 @@ public class FlameGraph implements Comparator<Frame> {
                 }
 
                 addSample(stack, ticks);
-                stack.size = 0;
+                stack.clear();
             }
         }
     }
