@@ -8,10 +8,14 @@ package one.convert;
 import one.jfr.Dictionary;
 import one.jfr.JfrReader;
 import one.jfr.StackTrace;
-import one.jfr.event.*;
+import one.jfr.event.AllocationSample;
+import one.jfr.event.ContendedLock;
+import one.jfr.event.Event;
 import one.proto.Proto;
 
-import java.io.*;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 
@@ -31,16 +35,29 @@ public class JfrToPprof extends JfrConverter {
 
     public JfrToPprof(JfrReader jfr, Arguments args) {
         super(jfr, args);
-    }
 
-    public void dump(OutputStream out) throws IOException {
         String type = args.alloc || args.live ? "allocations" : args.lock ? "locks" : "cpu";
         profile.field(1, valueType(type, "nanoseconds"))
                 .field(13, strings.index("async-profiler"));
         lastTicks = jfr.startTicks;
+    }
 
-        convert();
+    @Override
+    protected void convertChunk() throws IOException {
+        ArrayList<Event> list = new ArrayList<>();
+        readEvents(list::add);
+        Collections.sort(list);
 
+        methodNames = new Dictionary<>();
+        classifier = new Classifier(methodNames);
+        ticksToNanos = 1e9 / jfr.ticksPerSec;
+
+        for (Event event : list) {
+            profile.field(2, sample(event));
+        }
+    }
+
+    public void dump(OutputStream out) throws IOException {
         Long[] locations = this.locations.keys();
         for (int i = 1; i < locations.length; i++) {
             profile.field(4, location(i, locations[i]));
@@ -60,21 +77,6 @@ public class JfrToPprof extends JfrConverter {
                 .field(10, jfr.durationNanos());
 
         out.write(profile.buffer(), 0, profile.size());
-    }
-
-    @Override
-    protected void convertChunk() throws IOException {
-        ArrayList<Event> list = new ArrayList<>();
-        readEvents(list::add);
-        Collections.sort(list);
-
-        methodNames = new Dictionary<>();
-        classifier = new Classifier(methodNames);
-        ticksToNanos = 1e9 / jfr.ticksPerSec;
-
-        for (Event event : list) {
-            profile.field(2, sample(event));
-        }
     }
 
     private Proto sample(Event event) {
@@ -153,9 +155,13 @@ public class JfrToPprof extends JfrConverter {
     }
 
     public static void convert(String input, String output, Arguments args) throws IOException {
-        try (JfrReader jfr = new JfrReader(input);
-             FileOutputStream out = new FileOutputStream(output)) {
-            new JfrToPprof(jfr, args).dump(out);
+        JfrToPprof converter;
+        try (JfrReader jfr = new JfrReader(input)) {
+            converter = new JfrToPprof(jfr, args);
+            converter.convert();
+        }
+        try (FileOutputStream out = new FileOutputStream(output)) {
+            converter.dump(out);
         }
     }
 }

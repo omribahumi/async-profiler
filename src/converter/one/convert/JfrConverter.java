@@ -84,7 +84,7 @@ public abstract class JfrConverter {
         return (long) ((nanos - jfr.chunkStartNanos) * (jfr.ticksPerSec / 1e9)) + jfr.chunkStartTicks;
     }
 
-    public String getMethodName(long methodId, byte methodType, Dictionary<String> cache) {
+    protected String getMethodName(long methodId, byte methodType, Dictionary<String> cache) {
         String result = cache.get(methodId);
         if (result == null) {
             cache.put(methodId, result = getMethodName(methodId, methodType));
@@ -92,7 +92,7 @@ public abstract class JfrConverter {
         return result;
     }
 
-    public String getMethodName(long methodId, byte methodType) {
+    protected String getMethodName(long methodId, byte methodType) {
         MethodRef method = jfr.methods.get(methodId);
         if (method == null) {
             return "unknown";
@@ -114,7 +114,7 @@ public abstract class JfrConverter {
         }
     }
 
-    public String getClassName(long classId) {
+    protected String getClassName(long classId) {
         ClassRef cls = jfr.classes.get(classId);
         if (cls == null) {
             return "null";
@@ -133,13 +133,13 @@ public abstract class JfrConverter {
         return name;
     }
 
-    public String getThreadName(int tid) {
+    protected String getThreadName(int tid) {
         String threadName = jfr.threads.get(tid);
         return threadName == null ? "[tid=" + tid + ']' :
                 threadName.startsWith("[tid=") ? threadName : '[' + threadName + " tid=" + tid + ']';
     }
 
-    private String toJavaClassName(byte[] symbol, int start, boolean dotted) {
+    protected String toJavaClassName(byte[] symbol, int start, boolean dotted) {
         int end = symbol.length;
         if (start > 0) {
             switch (symbol[start]) {
@@ -194,7 +194,7 @@ public abstract class JfrConverter {
         return dotted ? s.replace('/', '.') : s;
     }
 
-    private boolean isNativeFrame(byte methodType) {
+    protected boolean isNativeFrame(byte methodType) {
         // In JDK Flight Recorder, TYPE_NATIVE denotes Java native methods,
         // while in async-profiler, TYPE_NATIVE is for C methods
         return methodType == TYPE_NATIVE && jfr.getEnumValue("jdk.types.FrameType", TYPE_KERNEL) != null ||

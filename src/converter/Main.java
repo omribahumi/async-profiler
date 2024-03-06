@@ -38,16 +38,34 @@ public class Main {
         for (int i = 0; i < fileCount; i++) {
             String input = args.files.get(i);
             String output = isDirectory ? new File(lastFile, replaceExt(input, args.output)).getPath() : lastFile;
-            if (isJfr(input)) {
-                if ("pprof".equals(args.output)) {
-                    JfrToPprof.convert(input, output, args);
-                } else {
-                    JfrToFlame.convert(input, output, args);
-                }
-            } else {
-                FlameGraph.convert(input, output, args);
-            }
+
+            System.out.print("Converting " + getFileName(input) + " -> " + getFileName(output));
+            System.out.flush();
+
+            long startTime = System.nanoTime();
+            convert(input, output, args);
+            long endTime = System.nanoTime();
+
+            System.out.print(" # " + (endTime - startTime) / 1e9 + " s\n");
         }
+    }
+
+    private static void convert(String input, String output, Arguments args) throws IOException {
+        if (isJfr(input)) {
+            if ("pprof".equals(args.output)) {
+                JfrToPprof.convert(input, output, args);
+            } else if ("html".equals(args.output)) {
+                JfrToFlame.convert(input, output, args);
+            } else {
+                throw new IllegalArgumentException("Unrecognized output format: " + args.output);
+            }
+        } else {
+            FlameGraph.convert(input, output, args);
+        }
+    }
+
+    private static String getFileName(String fileName) {
+        return fileName.substring(fileName.lastIndexOf(File.separatorChar) + 1);
     }
 
     private static String replaceExt(String fileName, String ext) {
@@ -69,26 +87,10 @@ public class Main {
     }
 
     private static void usage() {
-        String launcher;
-        if ("SUN_STANDARD".equals(System.getProperty("sun.java.launcher"))) {
-            launcher = "java -jar jfrconv.jar";
-        } else {
-            launcher = System.getProperty("sun.java.command");
-        }
-
-        System.out.print("Usage: " + launcher + " [options] <input> <output>\n" +
+        System.out.print("Usage: jfrconv [options] <input> <output>\n" +
                 "\n" +
                 "Conversion options:\n" +
                 "  -o --output FORMAT    Output format: html, collapsed, pprof\n" +
-                "\n" +
-                "Flame Graph options:\n" +
-                "     --title STRING     Flame Graph title\n" +
-                "     --minwidth X       Skip frames smaller than X%\n" +
-                "     --skip N           Skip N bottom frames\n" +
-                "  -r --reverse          Reverse stack traces (icicle graph)\n" +
-                "  -I --include REGEX    Include only stacks with the specified frames\n" +
-                "  -X --exclude REGEX    Exclude stacks with the specified frames\n" +
-                "     --highlight REGEX  Highlight frames matching the given pattern\n" +
                 "\n" +
                 "JFR options:\n" +
                 "     --alloc            Allocation profile\n" +
@@ -104,6 +106,15 @@ public class Main {
                 "     --norm             Normalize names of hidden classes / lambdas\n" +
                 "     --dot              Dotted class names\n" +
                 "     --from TIME        Start time in ms (absolute or relative)\n" +
-                "     --to TIME          End time in ms (absolute or relative)\n");
+                "     --to TIME          End time in ms (absolute or relative)\n" +
+                "\n" +
+                "Flame Graph options:\n" +
+                "     --title STRING     Flame Graph title\n" +
+                "     --minwidth X       Skip frames smaller than X%\n" +
+                "     --skip N           Skip N bottom frames\n" +
+                "  -r --reverse          Reverse stack traces (icicle graph)\n" +
+                "  -I --include REGEX    Include only stacks with the specified frames\n" +
+                "  -X --exclude REGEX    Exclude stacks with the specified frames\n" +
+                "     --highlight REGEX  Highlight frames matching the given pattern\n");
     }
 }

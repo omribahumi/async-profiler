@@ -8,9 +8,14 @@ package one.convert;
 import one.jfr.Dictionary;
 import one.jfr.JfrReader;
 import one.jfr.StackTrace;
-import one.jfr.event.*;
+import one.jfr.event.AllocationSample;
+import one.jfr.event.Event;
+import one.jfr.event.EventAggregator;
 
-import java.io.*;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 
 import static one.convert.Frame.*;
 
@@ -23,14 +28,6 @@ public class JfrToFlame extends JfrConverter {
     public JfrToFlame(JfrReader jfr, Arguments args) {
         super(jfr, args);
         this.fg = new FlameGraph(args);
-    }
-
-    public void dump(OutputStream out) throws IOException {
-        convert();
-
-        try (PrintStream ps = new PrintStream(new BufferedOutputStream(out, 32768), false, "UTF-8")) {
-            fg.dump(ps);
-        }
     }
 
     @Override
@@ -85,10 +82,20 @@ public class JfrToFlame extends JfrConverter {
         });
     }
 
+    public void dump(OutputStream out) throws IOException {
+        try (PrintStream ps = new PrintStream(out, false, "UTF-8")) {
+            fg.dump(ps);
+        }
+    }
+
     public static void convert(String input, String output, Arguments args) throws IOException {
-        try (JfrReader jfr = new JfrReader(input);
-             FileOutputStream out = new FileOutputStream(output)) {
-            new JfrToFlame(jfr, args).dump(out);
+        JfrToFlame converter;
+        try (JfrReader jfr = new JfrReader(input)) {
+            converter = new JfrToFlame(jfr, args);
+            converter.convert();
+        }
+        try (FileOutputStream out = new FileOutputStream(output)) {
+            converter.dump(out);
         }
     }
 }

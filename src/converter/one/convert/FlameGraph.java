@@ -15,7 +15,6 @@ import static one.convert.Frame.*;
 
 public class FlameGraph implements Comparator<Frame> {
     private static final Frame[] EMPTY_FRAME_ARRAY = {};
-    // TODO
     private static final String[] FRAME_SUFFIX = {"_[0]", "_[j]", "_[i]", "", "", "_[k]", "_[1]"};
     private static final byte HAS_SUFFIX = (byte) 0x80;
 
@@ -83,11 +82,16 @@ public class FlameGraph implements Comparator<Frame> {
 
     public void dump(PrintStream out) {
         mintotal = (long) (root.total * args.minwidth / 100);
-        int depth = mintotal > 1 ? root.depth(mintotal) : this.depth + 1;
+
+        if ("collapsed".equals(args.output)) {
+            printFrameCollapsed(out, root, cpool.keys(), new StringBuilder(1000));
+            return;
+        }
 
         String tail = getResource("/flame.html");
 
         tail = printTill(out, tail, "/*height:*/300");
+        int depth = mintotal > 1 ? root.depth(mintotal) : this.depth + 1;
         out.print(Math.min(depth * 16, 32767));
 
         tail = printTill(out, tail, "/*title:*/");
@@ -173,6 +177,27 @@ public class FlameGraph implements Comparator<Frame> {
             }
             x += child.total;
         }
+    }
+
+    private void printFrameCollapsed(PrintStream out, Frame frame, String[] strings, StringBuilder sb) {
+        int prevLength = sb.length();
+        if (frame != root) {
+            sb.append(strings[frame.getTitleIndex()]).append(FRAME_SUFFIX[frame.getType()]);
+            if (frame.self > 0) {
+                int tmpLength = sb.length();
+                out.print(sb.append(' ').append(frame.self).append('\n').toString());
+                sb.setLength(tmpLength);
+            }
+        }
+        if (!frame.isEmpty()) {
+            sb.append(';');
+            for (Frame child : frame.values()) {
+                if (child.total >= mintotal) {
+                    printFrameCollapsed(out, child, strings, sb);
+                }
+            }
+        }
+        sb.setLength(prevLength);
     }
 
     private boolean excludeStack(CallStack stack) {
@@ -277,11 +302,11 @@ public class FlameGraph implements Comparator<Frame> {
     }
 
     public static void convert(String input, String output, Arguments args) throws IOException {
-        try (InputStreamReader in = new InputStreamReader(new FileInputStream(input), StandardCharsets.UTF_8);
-             BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(output), 32768);
-             PrintStream out = new PrintStream(bos, false, "UTF-8")) {
-            FlameGraph fg = new FlameGraph(args);
+        FlameGraph fg = new FlameGraph(args);
+        try (InputStreamReader in = new InputStreamReader(new FileInputStream(input), StandardCharsets.UTF_8)) {
             fg.parse(in);
+        }
+        try (PrintStream out = new PrintStream(output, "UTF-8")) {
             fg.dump(out);
         }
     }
