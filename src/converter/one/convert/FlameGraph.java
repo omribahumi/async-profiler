@@ -17,10 +17,12 @@ public class FlameGraph implements Comparator<Frame> {
     private static final Frame[] EMPTY_FRAME_ARRAY = {};
     private static final String[] FRAME_SUFFIX = {"_[0]", "_[j]", "_[i]", "", "", "_[k]", "_[1]"};
     private static final byte HAS_SUFFIX = (byte) 0x80;
+    private static final int FLUSH_THRESHOLD = 15000;
 
     private final Arguments args;
     private final Index<String> cpool = new Index<>(String.class, "");
     private final Frame root = new Frame(0, TYPE_NATIVE);
+    private final StringBuilder outbuf = new StringBuilder(FLUSH_THRESHOLD + 1000);
     private int[] order;
     private int depth;
     private int lastLevel;
@@ -84,7 +86,7 @@ public class FlameGraph implements Comparator<Frame> {
         mintotal = (long) (root.total * args.minwidth / 100);
 
         if ("collapsed".equals(args.output)) {
-            printFrameCollapsed(out, root, cpool.keys(), new StringBuilder(1000));
+            printFrameCollapsed(out, root, cpool.keys());
             return;
         }
 
@@ -108,6 +110,7 @@ public class FlameGraph implements Comparator<Frame> {
 
         tail = printTill(out, tail, "/*frames:*/");
         printFrame(out, root, 0, 0);
+        out.print(outbuf);
 
         tail = printTill(out, tail, "/*highlight:*/");
         out.print(args.highlight != null ? "'" + escape(args.highlight) + "'" : "");
@@ -150,7 +153,7 @@ public class FlameGraph implements Comparator<Frame> {
             func = 'n';
         }
 
-        StringBuilder sb = new StringBuilder(24).append(func).append('(').append(nameAndType);
+        StringBuilder sb = outbuf.append(func).append('(').append(nameAndType);
         if (func == 'f') {
             sb.append(',').append(level).append(',').append(x - lastX);
         }
@@ -160,8 +163,12 @@ public class FlameGraph implements Comparator<Frame> {
                 sb.append(',').append(frame.inlined).append(',').append(frame.c1).append(',').append(frame.interpreted);
             }
         }
-        sb.append(')');
-        out.println(sb.toString());
+        sb.append(")\n");
+
+        if (sb.length() > FLUSH_THRESHOLD) {
+            out.print(sb);
+            sb.setLength(0);
+        }
 
         lastLevel = level;
         lastX = x;
@@ -179,24 +186,28 @@ public class FlameGraph implements Comparator<Frame> {
         }
     }
 
-    private void printFrameCollapsed(PrintStream out, Frame frame, String[] strings, StringBuilder sb) {
+    private void printFrameCollapsed(PrintStream out, Frame frame, String[] strings) {
+        StringBuilder sb = outbuf;
         int prevLength = sb.length();
+
         if (frame != root) {
             sb.append(strings[frame.getTitleIndex()]).append(FRAME_SUFFIX[frame.getType()]);
             if (frame.self > 0) {
                 int tmpLength = sb.length();
-                out.print(sb.append(' ').append(frame.self).append('\n').toString());
+                out.print(sb.append(' ').append(frame.self).append('\n'));
                 sb.setLength(tmpLength);
             }
         }
+
         if (!frame.isEmpty()) {
             sb.append(';');
             for (Frame child : frame.values()) {
                 if (child.total >= mintotal) {
-                    printFrameCollapsed(out, child, strings, sb);
+                    printFrameCollapsed(out, child, strings);
                 }
             }
         }
+
         sb.setLength(prevLength);
     }
 

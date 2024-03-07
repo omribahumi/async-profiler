@@ -46,7 +46,7 @@ public class Main {
             convert(input, output, args);
             long endTime = System.nanoTime();
 
-            System.out.print(" # " + (endTime - startTime) / 1e9 + " s\n");
+            System.out.print(" # " + (endTime - startTime) / 1000000 / 1000.0 + " s\n");
         }
     }
 
