@@ -119,7 +119,8 @@ public class Proto {
 
     private void ensureCapacity(int length) {
         if (pos + length > buf.length) {
-            buf = Arrays.copyOf(buf, Math.max(pos + length, buf.length * 2));
+            int newLength = buf.length * 2;
+            buf = Arrays.copyOf(buf, newLength < 0 ? 0x7ffffff0 : Math.max(newLength, pos + length));
         }
     }
 }

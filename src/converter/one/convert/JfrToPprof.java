@@ -52,8 +52,10 @@ public class JfrToPprof extends JfrConverter {
         classifier = new Classifier(methodNames);
         ticksToNanos = 1e9 / jfr.ticksPerSec;
 
+        Proto s = new Proto(100);
         for (Event event : list) {
-            profile.field(2, sample(event));
+            profile.field(2, sample(s, event));
+            s.reset();
         }
     }
 
@@ -79,9 +81,7 @@ public class JfrToPprof extends JfrConverter {
         out.write(profile.buffer(), 0, profile.size());
     }
 
-    private Proto sample(Event event) {
-        Proto sample = new Proto(100);
-
+    private Proto sample(Proto s, Event event) {
         StackTrace stackTrace = jfr.stackTraces.get(event.stackTraceId);
         if (stackTrace != null) {
             long[] methods = stackTrace.methods;
@@ -90,31 +90,31 @@ public class JfrToPprof extends JfrConverter {
             for (int i = 0; i < methods.length; i++) {
                 String methodName = getMethodName(methods[i], types[i], methodNames);
                 int function = functions.index(methodName);
-                sample.field(1, locations.index((long) function << 16 | lines[i] >>> 16));
+                s.field(1, locations.index((long) function << 16 | lines[i] >>> 16));
             }
         }
 
-        sample.field(2, (long) ((event.time - lastTicks) * ticksToNanos));
+        s.field(2, (long) ((event.time - lastTicks) * ticksToNanos));
         lastTicks = event.time;
 
         long classId = event.classId();
         if (classId != 0) {
-            sample.field(3, label("class", getClassName(classId)));
+            s.field(3, label("class", getClassName(classId)));
             if (event instanceof AllocationSample) {
-                sample.field(3, label("allocation_size", event.value(), "bytes"));
+                s.field(3, label("allocation_size", event.value(), "bytes"));
             } else if (event instanceof ContendedLock) {
-                sample.field(3, label("duration", event.value(), "nanoseconds"));
+                s.field(3, label("duration", event.value(), "nanoseconds"));
             }
         }
 
         if (args.threads && event.tid != 0) {
-            sample.field(3, label("thread", getThreadName(event.tid)));
+            s.field(3, label("thread", getThreadName(event.tid)));
         }
         if (args.classify && stackTrace != null) {
-            sample.field(3, label("category", classifier.getCategory(stackTrace).title));
+            s.field(3, label("category", classifier.getCategory(stackTrace).title));
         }
 
-        return sample;
+        return s;
     }
 
     private Proto valueType(String type, String unit) {

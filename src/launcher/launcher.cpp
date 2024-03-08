@@ -161,7 +161,8 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
     options[o_count++].optionString = (char*)"-Xss2M";
 
     for (; argc > 0; argc--, argv++) {
-        if ((strncmp(*argv, "-D", 2) == 0 || strncmp(*argv, "-X", 2) == 0) && (*argv)[2]) {
+        if ((strncmp(*argv, "-D", 2) == 0 || strncmp(*argv, "-X", 2) == 0) && (*argv)[2] ||
+                strncmp(*argv, "-agent", 6) == 0) {
             options[o_count++].optionString = *argv;
         } else if (strncmp(*argv, "-J", 2) == 0) {
             options[o_count++].optionString = *argv + 2;
