@@ -8,16 +8,14 @@ package one.convert;
 import one.jfr.Dictionary;
 import one.jfr.JfrReader;
 import one.jfr.StackTrace;
-import one.jfr.event.AllocationSample;
-import one.jfr.event.ContendedLock;
 import one.jfr.event.Event;
+import one.jfr.event.EventAggregator;
 import one.proto.Proto;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Converts .jfr output to <a href="https://github.com/google/pprof">pprof</a>.
@@ -30,33 +28,40 @@ public class JfrToPprof extends JfrConverter {
 
     private Dictionary<String> methodNames;
     private Classifier classifier;
-    private double ticksToNanos;
-    private long lastTicks;
 
     public JfrToPprof(JfrReader jfr, Arguments args) {
         super(jfr, args);
 
-        String type = args.alloc || args.live ? "allocations" : args.lock ? "locks" : "cpu";
-        profile.field(1, valueType(type, "nanoseconds"))
+        Proto sampleType;
+        if (args.alloc || args.live) {
+            sampleType = valueType("allocations", args.total ? "bytes" : "count");
+        } else if (args.lock) {
+            sampleType = valueType("locks", args.total ? "nanoseconds" : "count");
+        } else {
+            sampleType = valueType("cpu", args.total ? "nanoseconds" : "count");
+        }
+
+        profile.field(1, sampleType)
                 .field(13, strings.index("async-profiler"));
-        lastTicks = jfr.startTicks;
     }
 
     @Override
     protected void convertChunk() throws IOException {
-        ArrayList<Event> list = new ArrayList<>();
-        readEvents(list::add);
-        Collections.sort(list);
-
         methodNames = new Dictionary<>();
         classifier = new Classifier(methodNames);
-        ticksToNanos = 1e9 / jfr.ticksPerSec;
 
-        Proto s = new Proto(100);
-        for (Event event : list) {
-            profile.field(2, sample(s, event));
-            s.reset();
-        }
+        parseEvents(new EventAggregator.Visitor() {
+            final Proto s = new Proto(100);
+
+            final double ticksToNanos = 1e9 / jfr.ticksPerSec;
+            final boolean scale = args.total && args.lock && ticksToNanos != 1.0;
+
+            @Override
+            public void visit(Event event, long value) {
+                profile.field(2, sample(s, event, scale ? (long) (value * ticksToNanos) : value));
+                s.reset();
+            }
+        });
     }
 
     public void dump(OutputStream out) throws IOException {
@@ -81,7 +86,7 @@ public class JfrToPprof extends JfrConverter {
         out.write(profile.buffer(), 0, profile.size());
     }
 
-    private Proto sample(Proto s, Event event) {
+    private Proto sample(Proto s, Event event, long value) {
         StackTrace stackTrace = jfr.stackTraces.get(event.stackTraceId);
         if (stackTrace != null) {
             long[] methods = stackTrace.methods;
@@ -94,18 +99,13 @@ public class JfrToPprof extends JfrConverter {
             }
         }
 
-        s.field(2, (long) ((event.time - lastTicks) * ticksToNanos));
-        lastTicks = event.time;
-
         long classId = event.classId();
         if (classId != 0) {
-            s.field(3, label("class", getClassName(classId)));
-            if (event instanceof AllocationSample) {
-                s.field(3, label("allocation_size", event.value(), "bytes"));
-            } else if (event instanceof ContendedLock) {
-                s.field(3, label("duration", event.value(), "nanoseconds"));
-            }
+            int function = functions.index(getClassName(classId));
+            s.field(1, locations.index((long) function << 16));
         }
+
+        s.field(2, value);
 
         if (args.threads && event.tid != 0) {
             s.field(3, label("thread", getThreadName(event.tid)));
@@ -127,13 +127,6 @@ public class JfrToPprof extends JfrConverter {
         return new Proto(16)
                 .field(1, strings.index(key))
                 .field(2, strings.index(str));
-    }
-
-    private Proto label(String key, long num, String unit) {
-        return new Proto(16)
-                .field(1, strings.index(key))
-                .field(3, num)
-                .field(4, strings.index(unit));
     }
 
     private Proto location(int id, long location) {
@@ -160,8 +153,14 @@ public class JfrToPprof extends JfrConverter {
             converter = new JfrToPprof(jfr, args);
             converter.convert();
         }
-        try (FileOutputStream out = new FileOutputStream(output)) {
+        OutputStream out = new FileOutputStream(output);
+        try {
+            if (args.output.endsWith(".gz")) {
+                out = new GZIPOutputStream(out, 4096);
+            }
             converter.dump(out);
+        } finally {
+            out.close();
         }
     }
 }

@@ -14,7 +14,6 @@ import one.jfr.event.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.function.Consumer;
 
 import static one.convert.Frame.*;
 
@@ -36,7 +35,9 @@ public abstract class JfrConverter {
 
     protected abstract void convertChunk() throws IOException;
 
-    protected void readEvents(Consumer<Event> consumer) throws IOException {
+    protected void parseEvents(EventAggregator.Visitor visitor) throws IOException {
+        EventAggregator agg = new EventAggregator(args.threads, args.total);
+
         Class<? extends Event> eventClass =
                 args.live ? LiveObject.class :
                         args.alloc ? AllocationSample.class :
@@ -55,10 +56,12 @@ public abstract class JfrConverter {
         for (Event event; (event = jfr.readEvent(eventClass)) != null; ) {
             if (event.time >= startTicks && event.time <= endTicks) {
                 if (threadStates == 0 || (threadStates & (1L << ((ExecutionSample) event).threadState)) != 0) {
-                    consumer.accept(event);
+                    agg.collect(event);
                 }
             }
         }
+
+        agg.forEach(visitor);
     }
 
     protected int toThreadState(String name) {

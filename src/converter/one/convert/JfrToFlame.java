@@ -32,10 +32,7 @@ public class JfrToFlame extends JfrConverter {
 
     @Override
     protected void convertChunk() throws IOException {
-        EventAggregator agg = new EventAggregator(args.threads, args.total);
-        readEvents(agg::collect);
-
-        agg.forEach(new EventAggregator.Visitor() {
+        parseEvents(new EventAggregator.Visitor() {
             final Dictionary<String> methodNames = new Dictionary<>();
             final Classifier classifier = new Classifier(methodNames);
             final CallStack stack = new CallStack();

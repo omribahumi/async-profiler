@@ -52,10 +52,10 @@ public class Main {
 
     private static void convert(String input, String output, Arguments args) throws IOException {
         if (isJfr(input)) {
-            if ("pprof".equals(args.output)) {
-                JfrToPprof.convert(input, output, args);
-            } else if ("html".equals(args.output)) {
+            if ("html".equals(args.output)) {
                 JfrToFlame.convert(input, output, args);
+            } else if ("pprof".equals(args.output) || "pb".equals(args.output) || args.output.endsWith(".gz")) {
+                JfrToPprof.convert(input, output, args);
             } else {
                 throw new IllegalArgumentException("Unrecognized output format: " + args.output);
             }
@@ -90,7 +90,7 @@ public class Main {
         System.out.print("Usage: jfrconv [options] <input> <output>\n" +
                 "\n" +
                 "Conversion options:\n" +
-                "  -o --output FORMAT    Output format: html, collapsed, pprof\n" +
+                "  -o --output FORMAT    Output format: html, collapsed, pprof, pb.gz\n" +
                 "\n" +
                 "JFR options:\n" +
                 "     --alloc            Allocation profile\n" +
