@@ -5,12 +5,11 @@
 
 package one.convert;
 
-import one.jfr.Dictionary;
 import one.jfr.StackTrace;
 
 import static one.convert.Frame.*;
 
-class Classifier {
+abstract class Classifier {
 
     enum Category {
         GC("[gc]", TYPE_CPP),
@@ -37,12 +36,6 @@ class Classifier {
         }
     }
 
-    private final Dictionary<String> methodNames;
-
-    Classifier(Dictionary<String> methodNames) {
-        this.methodNames = methodNames;
-    }
-
     public Category getCategory(StackTrace stackTrace) {
         long[] methods = stackTrace.methods;
         byte[] types = stackTrace.types;
@@ -59,7 +52,7 @@ class Classifier {
         boolean vmThread = false;
         for (int i = types.length; --i >= 0; ) {
             if (types[i] == TYPE_CPP) {
-                switch (methodNames.get(methods[i])) {
+                switch (getMethodName(methods[i], types[i])) {
                     case "CompileBroker::compiler_thread_loop":
                         return Category.JIT;
                     case "GCTaskThread::run":
@@ -79,7 +72,7 @@ class Classifier {
 
     private Category detectClassLoading(long[] methods, byte[] types) {
         for (int i = 0; i < methods.length; i++) {
-            String methodName = methodNames.get(methods[i]);
+            String methodName = getMethodName(methods[i], types[i]);
             if (methodName.equals("Verifier::verify")) {
                 return Category.CLASS_VERIFY;
             } else if (methodName.startsWith("InstanceKlass::initialize")) {
@@ -116,7 +109,7 @@ class Classifier {
                     inJava = true;
                     break;
                 case TYPE_NATIVE: {
-                    String methodName = methodNames.get(methods[i]);
+                    String methodName = getMethodName(methods[i], types[i]);
                     if (methodName.startsWith("JVM_") || methodName.startsWith("Unsafe_") ||
                             methodName.startsWith("MHN_") || methodName.startsWith("jni_")) {
                         return Category.VM;
@@ -136,7 +129,7 @@ class Classifier {
                     break;
                 }
                 case TYPE_CPP: {
-                    String methodName = methodNames.get(methods[i]);
+                    String methodName = getMethodName(methods[i], types[i]);
                     if (methodName.startsWith("Runtime1::")) {
                         return Category.C1_COMP;
                     }
@@ -148,4 +141,6 @@ class Classifier {
         }
         return Category.NATIVE;
     }
+
+    protected abstract String getMethodName(long method, byte type);
 }

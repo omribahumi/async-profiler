@@ -5,7 +5,6 @@
 
 package one.convert;
 
-import one.jfr.Dictionary;
 import one.jfr.JfrReader;
 import one.jfr.StackTrace;
 import one.jfr.event.Event;
@@ -26,9 +25,6 @@ public class JfrToPprof extends JfrConverter {
     private final Index<String> functions = new Index<>(String.class, "");
     private final Index<Long> locations = new Index<>(Long.class, 0L);
 
-    private Dictionary<String> methodNames;
-    private Classifier classifier;
-
     public JfrToPprof(JfrReader jfr, Arguments args) {
         super(jfr, args);
 
@@ -47,12 +43,8 @@ public class JfrToPprof extends JfrConverter {
 
     @Override
     protected void convertChunk() throws IOException {
-        methodNames = new Dictionary<>();
-        classifier = new Classifier(methodNames);
-
-        parseEvents(new EventAggregator.Visitor() {
+        collectEvents().forEach(new EventAggregator.Visitor() {
             final Proto s = new Proto(100);
-
             final double ticksToNanos = 1e9 / jfr.ticksPerSec;
             final boolean scale = args.total && args.lock && ticksToNanos != 1.0;
 
@@ -101,7 +93,7 @@ public class JfrToPprof extends JfrConverter {
             byte[] types = stackTrace.types;
             int[] lines = stackTrace.locations;
             for (int i = 0; i < methods.length; i++) {
-                String methodName = getMethodName(methods[i], types[i], methodNames);
+                String methodName = getMethodName(methods[i], types[i]);
                 int function = functions.index(methodName);
                 s.field(1, locations.index((long) function << 16 | lines[i] >>> 16));
             }
@@ -113,7 +105,7 @@ public class JfrToPprof extends JfrConverter {
             s.field(3, label("thread", getThreadName(event.tid)));
         }
         if (args.classify && stackTrace != null) {
-            s.field(3, label("category", classifier.getCategory(stackTrace).title));
+            s.field(3, label("category", getCategory(stackTrace).title));
         }
 
         return s;

@@ -5,7 +5,6 @@
 
 package one.convert;
 
-import one.jfr.Dictionary;
 import one.jfr.JfrReader;
 import one.jfr.StackTrace;
 import one.jfr.event.AllocationSample;
@@ -32,11 +31,8 @@ public class JfrToFlame extends JfrConverter {
 
     @Override
     protected void convertChunk() throws IOException {
-        parseEvents(new EventAggregator.Visitor() {
-            final Dictionary<String> methodNames = new Dictionary<>();
-            final Classifier classifier = new Classifier(methodNames);
+        collectEvents().forEach(new EventAggregator.Visitor() {
             final CallStack stack = new CallStack();
-
             final double ticksToNanos = 1e9 / jfr.ticksPerSec;
             final boolean scale = args.total && args.lock && ticksToNanos != 1.0;
 
@@ -53,11 +49,11 @@ public class JfrToFlame extends JfrConverter {
                         stack.push(getThreadName(event.tid), TYPE_NATIVE);
                     }
                     if (args.classify) {
-                        Classifier.Category category = classifier.getCategory(stackTrace);
+                        Classifier.Category category = getCategory(stackTrace);
                         stack.push(category.title, category.type);
                     }
                     for (int i = methods.length; --i >= 0; ) {
-                        String methodName = getMethodName(methods[i], types[i], methodNames);
+                        String methodName = getMethodName(methods[i], types[i]);
                         int location;
                         if (args.lines && (location = locations[i] >>> 16) != 0) {
                             methodName += ":" + location;

@@ -17,9 +17,10 @@ import java.util.Map;
 
 import static one.convert.Frame.*;
 
-public abstract class JfrConverter {
+public abstract class JfrConverter extends Classifier {
     protected final JfrReader jfr;
     protected final Arguments args;
+    protected Dictionary<String> methodNames;
 
     public JfrConverter(JfrReader jfr, Arguments args) {
         this.jfr = jfr;
@@ -29,13 +30,15 @@ public abstract class JfrConverter {
     public void convert() throws IOException {
         jfr.stopAtNewChunk = true;
         while (jfr.hasMoreChunks()) {
+            // Reset method dictionary, since new chunk may have different IDs
+            methodNames = new Dictionary<>();
             convertChunk();
         }
     }
 
     protected abstract void convertChunk() throws IOException;
 
-    protected void parseEvents(EventAggregator.Visitor visitor) throws IOException {
+    protected EventAggregator collectEvents() throws IOException {
         EventAggregator agg = new EventAggregator(args.threads, args.total);
 
         Class<? extends Event> eventClass =
@@ -61,7 +64,7 @@ public abstract class JfrConverter {
             }
         }
 
-        agg.forEach(visitor);
+        return agg;
     }
 
     protected int toThreadState(String name) {
@@ -87,15 +90,16 @@ public abstract class JfrConverter {
         return (long) ((nanos - jfr.chunkStartNanos) * (jfr.ticksPerSec / 1e9)) + jfr.chunkStartTicks;
     }
 
-    protected String getMethodName(long methodId, byte methodType, Dictionary<String> cache) {
-        String result = cache.get(methodId);
+    @Override
+    protected String getMethodName(long methodId, byte methodType) {
+        String result = methodNames.get(methodId);
         if (result == null) {
-            cache.put(methodId, result = getMethodName(methodId, methodType));
+            methodNames.put(methodId, result = resolveMethodName(methodId, methodType));
         }
         return result;
     }
 
-    protected String getMethodName(long methodId, byte methodType) {
+    private String resolveMethodName(long methodId, byte methodType) {
         MethodRef method = jfr.methods.get(methodId);
         if (method == null) {
             return "unknown";
