@@ -42,7 +42,7 @@ public class JfrToPprof extends JfrConverter {
         }
 
         profile.field(1, sampleType)
-                .field(13, strings.index("async-profiler"));
+                .field(13, strings.index("Produced by async-profiler"));
     }
 
     @Override
@@ -65,6 +65,8 @@ public class JfrToPprof extends JfrConverter {
     }
 
     public void dump(OutputStream out) throws IOException {
+        profile.field(3, mapping(1, 0, Long.MAX_VALUE, "async-profiler"));
+
         Long[] locations = this.locations.keys();
         for (int i = 1; i < locations.length; i++) {
             profile.field(4, location(i, locations[i]));
@@ -87,6 +89,12 @@ public class JfrToPprof extends JfrConverter {
     }
 
     private Proto sample(Proto s, Event event, long value) {
+        long classId = event.classId();
+        if (classId != 0) {
+            int function = functions.index(getClassName(classId));
+            s.field(1, locations.index((long) function << 16));
+        }
+
         StackTrace stackTrace = jfr.stackTraces.get(event.stackTraceId);
         if (stackTrace != null) {
             long[] methods = stackTrace.methods;
@@ -97,12 +105,6 @@ public class JfrToPprof extends JfrConverter {
                 int function = functions.index(methodName);
                 s.field(1, locations.index((long) function << 16 | lines[i] >>> 16));
             }
-        }
-
-        long classId = event.classId();
-        if (classId != 0) {
-            int function = functions.index(getClassName(classId));
-            s.field(1, locations.index((long) function << 16));
         }
 
         s.field(2, value);
@@ -129,6 +131,14 @@ public class JfrToPprof extends JfrConverter {
                 .field(2, strings.index(str));
     }
 
+    private Proto mapping(int id, long start, long limit, String fileName) {
+        return new Proto(16)
+                .field(1, id)
+                .field(2, start)
+                .field(3, limit)
+                .field(5, strings.index(fileName));
+    }
+
     private Proto location(int id, long location) {
         return new Proto(16)
                 .field(1, id)
@@ -153,14 +163,9 @@ public class JfrToPprof extends JfrConverter {
             converter = new JfrToPprof(jfr, args);
             converter.convert();
         }
-        OutputStream out = new FileOutputStream(output);
-        try {
-            if (args.output.endsWith(".gz")) {
-                out = new GZIPOutputStream(out, 4096);
-            }
+        try (FileOutputStream fos = new FileOutputStream(output);
+             OutputStream out = args.output.endsWith(".gz") ? new GZIPOutputStream(fos, 4096) : fos) {
             converter.dump(out);
-        } finally {
-            out.close();
         }
     }
 }
