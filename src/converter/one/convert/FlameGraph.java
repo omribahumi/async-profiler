@@ -9,6 +9,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.StringTokenizer;
 import java.util.regex.Pattern;
 
 import static one.convert.Frame.*;
@@ -57,6 +58,70 @@ public class FlameGraph implements Comparator<Frame> {
 
                 addSample(stack, ticks);
                 stack.clear();
+            }
+        }
+    }
+
+    public void parseHtml(Reader in) throws IOException {
+        try (BufferedReader br = new BufferedReader(in)) {
+            for (String line; !(line = readLine(br)).startsWith("const cpool"); ) ;
+            readLine(br);
+
+            String s = "";
+            for (String line; (line = readLine(br)).startsWith("'"); ) {
+                String packed = unescape(line.substring(1, line.lastIndexOf('\'')));
+                s = s.substring(0, packed.charAt(0) - ' ').concat(packed.substring(1));
+                cpool.put(s, cpool.size());
+            }
+
+            for (String line; !(line = readLine(br)).isEmpty(); ) ;
+
+            Frame[] levels = new Frame[128];
+            int level = 0;
+            long total = 0;
+
+            for (String line; !(line = readLine(br)).isEmpty(); ) {
+                StringTokenizer st = new StringTokenizer(line.substring(2, line.length() - 1), ",");
+                int nameAndType = Integer.parseInt(st.nextToken());
+
+                char func = line.charAt(0);
+                if (func == 'f') {
+                    int newLevel = Integer.parseInt(st.nextToken());
+                    long self = Long.parseLong(st.nextToken());
+                    if (newLevel > level) {
+                        levels[level].self = self;
+                    }
+                    level = newLevel;
+                } else if (func == 'u') {
+                    level++;
+                } else if (func != 'n') {
+                    throw new IllegalStateException("Unexpected line: " + line);
+                }
+
+                if (st.hasMoreTokens()) {
+                    total = Long.parseLong(st.nextToken());
+                }
+
+                int titleIndex = nameAndType >>> 3;
+                byte type = (byte) (nameAndType & 7);
+                if (st.hasMoreTokens() && (type <= TYPE_INLINED || type >= TYPE_C1_COMPILED)) {
+                    type = TYPE_JIT_COMPILED;
+                }
+
+                Frame f = level > 0 ? new Frame(titleIndex, type) : root;
+                f.total = total;
+                if (st.hasMoreTokens()) f.inlined = Long.parseLong(st.nextToken());
+                if (st.hasMoreTokens()) f.c1 = Long.parseLong(st.nextToken());
+                if (st.hasMoreTokens()) f.interpreted = Long.parseLong(st.nextToken());
+
+                if (level > 0) {
+                    levels[level - 1].put(f.key, f);
+                    depth = Math.max(depth, level);
+                }
+                if (level >= levels.length) {
+                    levels = Arrays.copyOf(levels, level * 2);
+                }
+                levels[level] = f;
             }
         }
     }
@@ -197,10 +262,10 @@ public class FlameGraph implements Comparator<Frame> {
                 out.print(sb.append(' ').append(frame.self).append('\n'));
                 sb.setLength(tmpLength);
             }
+            sb.append(';');
         }
 
         if (!frame.isEmpty()) {
-            sb.append(';');
             for (Frame child : frame.values()) {
                 if (child.total >= mintotal) {
                     printFrameCollapsed(out, child, strings);
@@ -287,6 +352,20 @@ public class FlameGraph implements Comparator<Frame> {
     private static String escape(String s) {
         if (s.indexOf('\\') >= 0) s = s.replace("\\", "\\\\");
         if (s.indexOf('\'') >= 0) s = s.replace("'", "\\'");
+        return s;
+    }
+
+    private static String unescape(String s) {
+        if (s.indexOf('\'') >= 0) s = s.replace("\\'", "'");
+        if (s.indexOf('\\') >= 0) s = s.replace("\\\\", "\\");
+        return s;
+    }
+
+    private static String readLine(BufferedReader br) throws IOException {
+        String s = br.readLine();
+        if (s == null) {
+            throw new IllegalStateException("Unexpected end of file");
+        }
         return s;
     }
 
