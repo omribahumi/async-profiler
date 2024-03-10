@@ -51,6 +51,10 @@ public abstract class JfrConverter extends Classifier {
             for (String state : args.state.toUpperCase().split(",")) {
                 threadStates |= 1L << toThreadState(state);
             }
+        } else if (args.cpu) {
+            threadStates = 1L << toThreadState("DEFAULT");
+        } else if (args.wall) {
+            threadStates = ~(1L << toThreadState("DEFAULT"));
         }
 
         long startTicks = args.from != 0 ? toTicks(args.from) : Long.MIN_VALUE;

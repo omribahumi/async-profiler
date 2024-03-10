@@ -93,6 +93,8 @@ public class Main {
                 "  -o --output FORMAT    Output format: html, collapsed, pprof, pb.gz\n" +
                 "\n" +
                 "JFR options:\n" +
+                "     --cpu              CPU profile\n" +
+                "     --wall             Wall clock profile\n" +
                 "     --alloc            Allocation profile\n" +
                 "     --live             Live object profile\n" +
                 "     --lock             Lock contention profile\n" +

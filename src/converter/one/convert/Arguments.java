@@ -21,6 +21,8 @@ public class Arguments {
     public int skip;
     public boolean help;
     public boolean reverse;
+    public boolean cpu;
+    public boolean wall;
     public boolean alloc;
     public boolean live;
     public boolean lock;

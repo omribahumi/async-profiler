@@ -155,7 +155,7 @@ static int run_jvm(void* libjvm, int argc, char** argv) {
         return 1;
     }
 
-    JavaVMOption options[argc];
+    JavaVMOption options[argc + 2];
     int o_count = 0;
     options[o_count++].optionString = (char*)"-Dsun.java.command=" APP_BINARY;
     options[o_count++].optionString = (char*)"-Xss2M";
