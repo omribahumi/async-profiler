@@ -35,7 +35,7 @@ public class FlameGraph implements Comparator<Frame> {
         this.args = args;
     }
 
-    public void parse(Reader in) throws IOException {
+    public void parseCollapsed(Reader in) throws IOException {
         CallStack stack = new CallStack();
 
         try (BufferedReader br = new BufferedReader(in)) {
@@ -64,34 +64,30 @@ public class FlameGraph implements Comparator<Frame> {
 
     public void parseHtml(Reader in) throws IOException {
         try (BufferedReader br = new BufferedReader(in)) {
-            for (String line; !(line = readLine(br)).startsWith("const cpool"); ) ;
-            readLine(br);
+            for (String line; !(line = br.readLine()).startsWith("const cpool"); ) ;
+            br.readLine();
 
             String s = "";
-            for (String line; (line = readLine(br)).startsWith("'"); ) {
+            for (String line; (line = br.readLine()).startsWith("'"); ) {
                 String packed = unescape(line.substring(1, line.lastIndexOf('\'')));
                 s = s.substring(0, packed.charAt(0) - ' ').concat(packed.substring(1));
                 cpool.put(s, cpool.size());
             }
 
-            for (String line; !(line = readLine(br)).isEmpty(); ) ;
+            for (String line; !(line = br.readLine()).isEmpty(); ) ;
 
             Frame[] levels = new Frame[128];
             int level = 0;
             long total = 0;
 
-            for (String line; !(line = readLine(br)).isEmpty(); ) {
+            for (String line; !(line = br.readLine()).isEmpty(); ) {
                 StringTokenizer st = new StringTokenizer(line.substring(2, line.length() - 1), ",");
                 int nameAndType = Integer.parseInt(st.nextToken());
 
                 char func = line.charAt(0);
                 if (func == 'f') {
-                    int newLevel = Integer.parseInt(st.nextToken());
-                    long self = Long.parseLong(st.nextToken());
-                    if (newLevel > level) {
-                        levels[level].self = self;
-                    }
-                    level = newLevel;
+                    level = Integer.parseInt(st.nextToken());
+                    st.nextToken();
                 } else if (func == 'u') {
                     level++;
                 } else if (func != 'n') {
@@ -109,13 +105,15 @@ public class FlameGraph implements Comparator<Frame> {
                 }
 
                 Frame f = level > 0 ? new Frame(titleIndex, type) : root;
-                f.total = total;
+                f.self = f.total = total;
                 if (st.hasMoreTokens()) f.inlined = Long.parseLong(st.nextToken());
                 if (st.hasMoreTokens()) f.c1 = Long.parseLong(st.nextToken());
                 if (st.hasMoreTokens()) f.interpreted = Long.parseLong(st.nextToken());
 
                 if (level > 0) {
-                    levels[level - 1].put(f.key, f);
+                    Frame parent = levels[level - 1];
+                    parent.put(f.key, f);
+                    parent.self -= total;
                     depth = Math.max(depth, level);
                 }
                 if (level >= levels.length) {
@@ -361,14 +359,6 @@ public class FlameGraph implements Comparator<Frame> {
         return s;
     }
 
-    private static String readLine(BufferedReader br) throws IOException {
-        String s = br.readLine();
-        if (s == null) {
-            throw new IllegalStateException("Unexpected end of file");
-        }
-        return s;
-    }
-
     private static String getResource(String name) {
         try (InputStream stream = FlameGraph.class.getResourceAsStream(name)) {
             if (stream == null) {
@@ -394,7 +384,11 @@ public class FlameGraph implements Comparator<Frame> {
     public static void convert(String input, String output, Arguments args) throws IOException {
         FlameGraph fg = new FlameGraph(args);
         try (InputStreamReader in = new InputStreamReader(new FileInputStream(input), StandardCharsets.UTF_8)) {
-            fg.parse(in);
+            if (input.endsWith(".html")) {
+                fg.parseHtml(in);
+            } else {
+                fg.parseCollapsed(in);
+            }
         }
         try (PrintStream out = new PrintStream(output, "UTF-8")) {
             fg.dump(out);
