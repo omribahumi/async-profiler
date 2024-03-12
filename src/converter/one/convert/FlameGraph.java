@@ -63,8 +63,13 @@ public class FlameGraph implements Comparator<Frame> {
     }
 
     public void parseHtml(Reader in) throws IOException {
+        Frame[] levels = new Frame[128];
+        int level = 0;
+        long total = 0;
+        boolean needRebuild = args.reverse || args.include != null || args.exclude != null;
+
         try (BufferedReader br = new BufferedReader(in)) {
-            for (String line; !(line = br.readLine()).startsWith("const cpool"); ) ;
+            while (!br.readLine().startsWith("const cpool")) ;
             br.readLine();
 
             String s = "";
@@ -74,11 +79,7 @@ public class FlameGraph implements Comparator<Frame> {
                 cpool.put(s, cpool.size());
             }
 
-            for (String line; !(line = br.readLine()).isEmpty(); ) ;
-
-            Frame[] levels = new Frame[128];
-            int level = 0;
-            long total = 0;
+            while (!br.readLine().isEmpty()) ;
 
             for (String line; !(line = br.readLine()).isEmpty(); ) {
                 StringTokenizer st = new StringTokenizer(line.substring(2, line.length() - 1), ",");
@@ -104,7 +105,7 @@ public class FlameGraph implements Comparator<Frame> {
                     type = TYPE_JIT_COMPILED;
                 }
 
-                Frame f = level > 0 ? new Frame(titleIndex, type) : root;
+                Frame f = level > 0 || needRebuild ? new Frame(titleIndex, type) : root;
                 f.self = f.total = total;
                 if (st.hasMoreTokens()) f.inlined = Long.parseLong(st.nextToken());
                 if (st.hasMoreTokens()) f.c1 = Long.parseLong(st.nextToken());
@@ -120,6 +121,23 @@ public class FlameGraph implements Comparator<Frame> {
                     levels = Arrays.copyOf(levels, level * 2);
                 }
                 levels[level] = f;
+            }
+        }
+
+        if (needRebuild) {
+            rebuild(levels[0], new CallStack(), cpool.keys());
+        }
+    }
+
+    private void rebuild(Frame frame, CallStack stack, String[] strings) {
+        if (frame.self > 0) {
+            addSample(stack, frame.self);
+        }
+        if (!frame.isEmpty()) {
+            for (Frame child : frame.values()) {
+                stack.push(strings[child.getTitleIndex()], child.getType());
+                rebuild(child, stack, strings);
+                stack.size--;
             }
         }
     }
@@ -188,7 +206,7 @@ public class FlameGraph implements Comparator<Frame> {
     }
 
     private void printCpool(PrintStream out) {
-        String[] strings = cpool.keySet().toArray(new String[0]);
+        String[] strings = cpool.keys();
         Arrays.sort(strings);
         out.print("'all'");
 

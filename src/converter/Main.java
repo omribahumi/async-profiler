@@ -87,7 +87,7 @@ public class Main {
     }
 
     private static void usage() {
-        System.out.print("Usage: jfrconv [options] <input> <output>\n" +
+        System.out.print("Usage: jfrconv [options] <input> [<input>...] <output>\n" +
                 "\n" +
                 "Conversion options:\n" +
                 "  -o --output FORMAT    Output format: html, collapsed, pprof, pb.gz\n" +
