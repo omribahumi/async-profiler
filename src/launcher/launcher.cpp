@@ -21,7 +21,7 @@ static const char VERSION_STRING[] =
     "JFR converter " PROFILER_VERSION " built on " __DATE__ "\n";
 
 INCLUDE_HELPER_CLASS(EMBEDDED_CLASS_LOADER, CLASS_BYTES, "one/profiler/EmbeddedClassLoader")
-INCBIN(CONVERTER_JAR, "build/jar/jfrconv.jar")
+INCBIN(CONVERTER_JAR, "build/jar/jfr-converter.jar")
 
 
 #if defined(__APPLE__)
