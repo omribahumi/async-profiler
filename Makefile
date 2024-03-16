@@ -91,11 +91,9 @@ endif
 
 .PHONY: all jar release test native clean
 
-all: build/bin build/lib build/$(LIB_PROFILER) build/$(ASPROF) build/$(JFRCONV) jar
+all: build/bin build/lib build/$(LIB_PROFILER) build/$(ASPROF) jar build/$(JFRCONV)
 
 jar: build/jar build/$(API_JAR) build/$(CONVERTER_JAR)
-
-release: JAVA_TARGET=7
 
 release: $(PACKAGE_NAME).$(PACKAGE_EXT)
 
@@ -145,7 +143,7 @@ build/$(CONVERTER_JAR): $(CONVERTER_SOURCES) $(RESOURCES)
 	$(RM) -r build/converter
 
 %.class: %.java
-	$(JAVAC) -source $(JAVA_TARGET) -target $(JAVA_TARGET) -Xlint:-options -g:none $^
+	$(JAVAC) -source 7 -target 7 -Xlint:-options -g:none $^
 
 test: all
 	test/smoke-test.sh
