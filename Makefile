@@ -7,7 +7,7 @@ ASPROF=bin/asprof
 JFRCONV=bin/jfrconv
 LIB_PROFILER=lib/libasyncProfiler.$(SOEXT)
 API_JAR=jar/async-profiler.jar
-CONVERTER_JAR=jar/jfrconv.jar
+CONVERTER_JAR=jar/jfr-converter.jar
 
 CFLAGS=-O3 -fno-exceptions
 CXXFLAGS=-O3 -fno-exceptions -fno-omit-frame-pointer -fvisibility=hidden
